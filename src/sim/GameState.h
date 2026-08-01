@@ -234,6 +234,9 @@ public:
     OrderResult invade(Id planet, const std::vector<Id>& unitIds, Faction f);
     /// Order units at a contested planet to disengage to a friendly world.
     OrderResult retreatFrom(Id planet, Faction f);
+    /// Break off a battle before it is fought: every unit of `f` at the planet
+    /// runs for the nearest friendly world (or is lost if there is none).
+    OrderResult withdraw(Id planet, Faction f);
 
     // --- battles ---
     bool hasPendingPlayerBattle() const;

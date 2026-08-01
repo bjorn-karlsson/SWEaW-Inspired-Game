@@ -55,34 +55,34 @@ void registerGalaxy(Database& d) {
     P(d, "coruscant", "Coruscant", "Core Worlds", 500, 500)
         .slots(10, 10, 3, 5).income(420).traits({Trait::CoreWorld, Trait::TradeHub})
         .desc("Capital of the Republic. The ecumenopolis at the centre of everything.").add();
-    P(d, "kuat", "Kuat", "Core Worlds", 546, 468)
+    P(d, "kuat", "Kuat", "Core Worlds", 574, 455)
         .slots(9, 6, 3, 4).income(300).traits({Trait::CoreWorld, Trait::Shipyards})
         .desc("Kuat Drive Yards ring the entire planet: capital ships cost less and build faster.").add();
-    P(d, "corellia", "Corellia", "Core Worlds", 468, 522)
+    P(d, "corellia", "Corellia", "Core Worlds", 449, 535)
         .slots(9, 7, 3, 4).income(320).traits({Trait::CoreWorld, Trait::Shipyards, Trait::TradeHub})
         .desc("Corellian Engineering Corporation yards and the busiest port in the Core.").add();
-    P(d, "alderaan", "Alderaan", "Core Worlds", 452, 462)
+    P(d, "alderaan", "Alderaan", "Core Worlds", 423, 439)
         .slots(6, 7, 2, 4).income(260).traits({Trait::CoreWorld, Trait::AgriWorld})
         .desc("Peaceful, wealthy, and politically indispensable.").add();
-    P(d, "chandrila", "Chandrila", "Core Worlds", 523, 548)
+    P(d, "chandrila", "Chandrila", "Core Worlds", 537, 577)
         .slots(6, 6, 2, 4).income(230).traits({Trait::CoreWorld, Trait::AgriWorld})
         .desc("Garden world and senatorial power base.").add();
-    P(d, "duro", "Duro", "Core Worlds", 486, 452)
+    P(d, "duro", "Duro", "Core Worlds", 478, 423)
         .slots(8, 4, 3, 3).income(250).traits({Trait::CoreWorld, Trait::Shipyards})
         .desc("Orbital cities and shipyards above a poisoned surface.").add();
-    P(d, "brentaal", "Brentaal IV", "Core Worlds", 528, 436)
+    P(d, "brentaal", "Brentaal IV", "Core Worlds", 545, 398)
         .slots(7, 5, 2, 4).income(240).traits({Trait::CoreWorld, Trait::TradeHub})
         .desc("Where the Perlemian Trade Route meets the Hydian Way.").add();
-    P(d, "anaxes", "Anaxes", "Core Worlds", 512, 478)
+    P(d, "anaxes", "Anaxes", "Core Worlds", 462, 486)
         .slots(8, 8, 3, 4).income(210).traits({Trait::CoreWorld, Trait::FortressWorld})
         .desc("The Republic Naval Academy and its fortress moons.").add();
-    P(d, "rendili", "Rendili", "Core Worlds", 530, 508)
+    P(d, "rendili", "Rendili", "Core Worlds", 548, 513)
         .slots(8, 5, 3, 3).income(230).traits({Trait::Shipyards})
         .desc("Rendili StarDrive: dreadnought hulls by the dozen.").add();
-    P(d, "foerost", "Foerost", "Core Worlds", 552, 452)
+    P(d, "foerost", "Foerost", "Core Worlds", 583, 423)
         .slots(8, 4, 3, 2).income(210).traits({Trait::Shipyards})
         .desc("Vast military slipways, second only to Kuat.").add();
-    P(d, "fondor", "Fondor", "Core Worlds", 566, 532)
+    P(d, "fondor", "Fondor", "Core Worlds", 606, 551)
         .slots(8, 5, 3, 3).income(250).traits({Trait::Shipyards, Trait::TradeHub})
         .desc("Independent shipyards that build for whoever pays.").add();
 

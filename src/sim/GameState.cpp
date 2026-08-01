@@ -838,6 +838,23 @@ OrderResult GameState::retreatFrom(Id planet, Faction f) {
     return moveUnits(mine, target);
 }
 
+OrderResult GameState::withdraw(Id planet, Faction f) {
+    std::vector<Id> mine = allUnitsAt(planet, f);
+    if (mine.empty()) return OrderResult::fail("No forces here");
+    Id target = nearestFriendlyPlanet(planet, f);
+    retreatUnits(mine, planet);
+    if (target == kInvalid) {
+        log("Forces at " + planets_[static_cast<size_t>(planet)].def().name +
+                " had nowhere to run and were lost",
+            f);
+        return OrderResult::success("No line of retreat - forces lost");
+    }
+    log(std::string(factionShortName(f)) + " withdraws from " +
+            planets_[static_cast<size_t>(planet)].def().name,
+        f);
+    return OrderResult::success("Withdrawing to " + planets_[static_cast<size_t>(target)].def().name);
+}
+
 // ---------------------------------------------------------------------------
 // Time
 // ---------------------------------------------------------------------------
