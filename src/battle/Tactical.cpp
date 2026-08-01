@@ -45,7 +45,7 @@ void Battle::init(const GameState& gs, const BattleSetup& setup, uint64_t seed) 
     victor_ = Faction::Neutral;
     attackerRetreating_ = false;
     defenderRetreating_ = false;
-    fieldSize_ = setup.domain == Domain::Space ? Vec2(1900.0f, 1150.0f) : Vec2(1500.0f, 1000.0f);
+    fieldSize_ = setup.domain == Domain::Space ? Vec2(1400.0f, 900.0f) : Vec2(1200.0f, 820.0f);
 
     spawnSide(gs, setup.attackerUnits, true, setup.attacker);
     spawnSide(gs, setup.defenderUnits, false, setup.defender);
@@ -60,13 +60,13 @@ void Battle::init(const GameState& gs, const BattleSetup& setup, uint64_t seed) 
 }
 
 Vec2 Battle::spawnPoint(bool attackerSide, int slot, int total) const {
-    float x = attackerSide ? fieldSize_.x * 0.14f : fieldSize_.x * 0.86f;
+    float x = attackerSide ? fieldSize_.x * 0.22f : fieldSize_.x * 0.78f;
     int perColumn = std::max(1, (total + 2) / 3);
     int column = slot / perColumn;
     int row = slot % perColumn;
     float spacing = fieldSize_.y / static_cast<float>(perColumn + 1);
     float y = spacing * static_cast<float>(row + 1);
-    x += (attackerSide ? -1.0f : 1.0f) * static_cast<float>(column) * 70.0f;
+    x += (attackerSide ? -1.0f : 1.0f) * static_cast<float>(column) * 60.0f;
     return Vec2(x, y);
 }
 
@@ -115,7 +115,7 @@ void Battle::spawnStructures(const GameState& gs, const std::vector<Id>& structu
         u.shield = bd.shieldStrength;
         u.radius = 24.0f;
         float spacing = fieldSize_.y / static_cast<float>(total + 1);
-        u.pos = Vec2(fieldSize_.x * 0.95f, spacing * static_cast<float>(slot + 1));
+        u.pos = Vec2(fieldSize_.x * 0.93f, spacing * static_cast<float>(slot + 1));
         units_.push_back(u);
         ++slot;
     }

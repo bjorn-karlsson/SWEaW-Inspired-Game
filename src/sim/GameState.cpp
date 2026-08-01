@@ -898,6 +898,7 @@ void GameState::advanceDay() {
 
     detectBattles();
     resolveAutomaticBattles();
+    handleStrandedTransports();
     refreshFactionAlive();
     checkVictory();
 }
@@ -1080,6 +1081,24 @@ void GameState::detectBattles() {
         pb.needsPlayerDecision = pb.setup.playerInvolved;
         pendingBattles_.push_back(pb);
         p.daysSinceCombat = 0;
+    }
+}
+
+void GameState::handleStrandedTransports() {
+    for (size_t i = 0; i < planets_.size(); ++i) {
+        Id pid = static_cast<Id>(i);
+        for (int fi = 1; fi < kFactionCount; ++fi) {
+            Faction f = factionFromIndex(fi);
+            std::vector<Id> inOrbit = unitsAt(pid, f, Domain::Ground, false, true);
+            if (inOrbit.empty()) continue;
+            if (!unitsAt(pid, f, Domain::Space).empty()) continue;  // they have an escort
+            if (orbitClearFor(pid, f)) continue;                    // the orbit is safe
+            Id refuge = nearestFriendlyPlanet(pid, f);
+            retreatUnits(inOrbit, pid);
+            log(std::string(factionShortName(f)) + " transports over " + planets_[i].def().name +
+                    (refuge == kInvalid ? " were destroyed with no escort" : " fled without escort"),
+                f);
+        }
     }
 }
 

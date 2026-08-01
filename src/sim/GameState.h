@@ -269,6 +269,8 @@ private:
     void tickHeroRespawns();
     void resolveAutomaticBattles();
     void detectBattles();
+    /// Troop transports left in a hostile orbit with no escort must run or die.
+    void handleStrandedTransports();
     void checkVictory();
 
     Id spawnUnit(Id defId, Faction owner, Id planet, bool landed);
