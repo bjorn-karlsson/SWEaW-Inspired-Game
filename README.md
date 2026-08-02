@@ -13,7 +13,8 @@ two are run by an AI that plays by exactly the same rules you do.
 | | |
 | --- | --- |
 | ![Main menu](docs/menu.png) | ![Galactic conquest map](docs/galaxy.png) |
-| ![Tactical space battle](docs/battle.png) | ![Battle report](docs/summary.png) |
+| ![Command console and hero roster](docs/hud.png) | ![Tactical space battle](docs/battle.png) |
+| ![Battle report](docs/summary.png) | |
 
 ## Building
 
@@ -46,6 +47,31 @@ If SDL2 is not installed, the console client and the tests still build.
 
 Pick a campaign, a faction and a difficulty, then press **BEGIN CAMPAIGN**.
 
+### The screen
+
+The star map fills the window and the HUD is a command console welded across
+the bottom, laid out like Empire at War's:
+
+* **far left** — help, holonet, world dossier and menu buttons
+* **left** — the galactic minimap (click or drag it to jump the camera) with
+  the pause and 1x/2x/4x speed controls beneath it
+* **centre** — the production readout for the selected world, the eight
+  category buttons (FLEET, ARMY, ORBIT, SURFACE, RESEARCH, HEROES, WORLD,
+  HOLONET), and the research readout
+* **status line** — selected world, its weekly income, orbit and surface slot
+  usage, faction standings, the week counter with its payday bar, weekly
+  income and your treasury
+* **tray** — the cards for whatever category is selected: buildable ships,
+  troops and structures with their cost and build time, the technology list,
+  hero recruitment, the world dossier with its clickable garrison, or the
+  holonet log
+* **right** — selection tools, WITHDRAW, and the big contextual
+  INVADE / DEPLOY button that lands the troops waiting in orbit
+
+Your commanders appear as portraits in the top right corner; click one to jump
+to the world it is on. When the game is paused a banner drops down from the top
+of the screen with a RESUME GAME button.
+
 ### Controls
 
 | Input | Action |
@@ -55,6 +81,7 @@ Pick a campaign, a faction and a difficulty, then press **BEGIN CAMPAIGN**.
 | Mouse wheel / WASD / arrows | zoom and pan |
 | Space | pause and resume |
 | 1 / 2 / 3 | normal, fast and fastest speed |
+| Q / E / R / F | fleet, army, research and world panels |
 | F1 | control summary |
 | Esc | clear the selection |
 
@@ -62,8 +89,8 @@ In a tactical battle: drag a box to select, right click to move or attack, `A`
 selects everything, `R` sounds the retreat, space pauses.
 
 Useful switches: `--autostart`, `--campaign N`, `--faction N`, `--difficulty N`,
-`--demo-battle`, and `--screenshot FILE.bmp` (renders a few frames, saves the
-image and exits — used for smoke testing).
+`--demo-battle`, `--demo-summary`, `--demo-hud`, and `--screenshot FILE.bmp`
+(renders a few frames, saves the image and exits — used for smoke testing).
 
 ### Console client
 

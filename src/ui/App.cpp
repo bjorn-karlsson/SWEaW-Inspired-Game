@@ -11,7 +11,10 @@ int App::run(const AppOptions& options) {
         return 1;
     }
 
-    if (options.autostart || options.demoBattle || options.demoSummary) startCampaign(options);
+    if (options.autostart || options.demoBattle || options.demoSummary || options.demoHud) {
+        startCampaign(options);
+    }
+    if (options.demoHud) grantDemoHeroes();
     if (options.demoBattle || options.demoSummary) startDemoBattle();
     if (options.demoSummary) {
         int guard = 0;
@@ -62,6 +65,27 @@ void App::startCampaign(const AppOptions& options) {
     selectedUnits_.clear();
     centreCameraOnHomeworld();
     screen_ = Screen::Galaxy;
+}
+
+void App::grantDemoHeroes() {
+    // Development aid: hand the player their commanders and pause, so the
+    // hero roster and the paused banner can be inspected in a screenshot.
+    Faction me = game_.playerFaction();
+    Id home = selectedPlanet_;
+    for (int i = 0; i < game_.planetCount() && home == kInvalid; ++i) {
+        if (game_.planet(i).owner == me) home = i;
+    }
+    if (home == kInvalid) return;
+    game_.faction(me).credits += 200000;
+    for (const UnitDef& u : db().units()) {
+        if (u.faction != me || !u.isHero) continue;
+        if (u.requiredTech != kInvalid) game_.faction(me).techKnown[static_cast<size_t>(u.requiredTech)] = 1;
+        game_.queueUnit(home, u.id, me);
+    }
+    // Run the queue out so the heroes actually exist.
+    for (int i = 0; i < 4000 && !game_.planet(home).queue.empty(); ++i) game_.update(0.5f);
+    game_.setSpeed(GameSpeed::Paused);
+    selectedPlanet_ = home;
 }
 
 void App::startDemoBattle() {

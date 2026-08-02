@@ -15,6 +15,7 @@ void printUsage() {
         "  --difficulty N           0 Padawan .. 3 Grand Master\n"
         "  --demo-battle            start straight in a tactical space battle\n"
         "  --demo-summary           fight a demo battle to the end, show the report\n"
+        "  --demo-hud               grant your heroes and pause (HUD screenshots)\n"
         "  --screenshot FILE.bmp    render a few frames, save the image and exit\n"
         "  --frames N               which frame to capture (default 40)\n"
         "  --help                   this text\n");
@@ -35,6 +36,8 @@ int main(int argc, char** argv) {
             options.demoBattle = true;
         } else if (arg == "--demo-summary") {
             options.demoSummary = true;
+        } else if (arg == "--demo-hud") {
+            options.demoHud = true;
         } else if (arg == "--campaign") {
             options.campaign = next(0);
         } else if (arg == "--faction") {

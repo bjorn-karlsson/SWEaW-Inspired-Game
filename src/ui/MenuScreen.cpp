@@ -181,7 +181,7 @@ void App::drawMenu() {
         selectedPlanet_ = kInvalid;
         selectedUnits_.clear();
         haveReport_ = false;
-        buildTab_ = 0;
+        category_ = 0;
         zoom_ = 1.4f;
         centreCameraOnHomeworld();
         screen_ = Screen::Galaxy;

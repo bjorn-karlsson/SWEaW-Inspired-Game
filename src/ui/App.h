@@ -18,6 +18,7 @@ struct AppOptions {
     bool autostart = false;   ///< Skip the menu and start the default campaign.
     bool demoBattle = false;  ///< Drop straight into a tactical battle.
     bool demoSummary = false; ///< Fight a demo battle to the end and show the report.
+    bool demoHud = false;     ///< Grant the player's heroes and pause, for HUD screenshots.
     std::string screenshot;   ///< Write this .bmp file, then exit.
     int screenshotFrame = 40;
     int campaign = 0;
@@ -35,6 +36,7 @@ private:
     // --- frame plumbing ---
     void startCampaign(const AppOptions& options);
     void startDemoBattle();
+    void grantDemoHeroes();
     /// Zoom so the whole battlefield is visible when a battle opens.
     void fitBattleView();
     void handleEvents();
@@ -62,14 +64,20 @@ private:
     void toggleUnitSelection(Id unitId);
     void selectAllAt(Id planet, Domain domain);
     void issueMoveOrder(Id destination);
-    void drawTopBar();
-    void drawSidePanel();
-    void drawMinimap();
-    void drawEventLog();
+    void drawRegionLabels();
+    void drawCommandBar();
+    void drawMinimap(const Rect& area);
+    void drawCategoryGrid(const Rect& area);
+    void drawStatusLine(const Rect& area);
+    void drawTray(const Rect& area);
+    void drawActionCluster(const Rect& area);
+    void drawHeroRoster();
+    void drawPausedBanner();
     void drawBattlePrompt();
     void drawPlanetTooltip();
-    void drawBuildTab(const Rect& area);
-    void drawGarrisonList(const Rect& area);
+    /// Queues a deferred tooltip so it is drawn on top of everything else.
+    void queueTooltip(const std::string& title, const std::vector<std::string>& lines);
+    void drawQueuedTooltip();
 
     // --- battle helpers ---
     void startTacticalBattle();
@@ -97,8 +105,10 @@ private:
     Id selectedPlanet_ = kInvalid;
     Id hoverPlanet_ = kInvalid;
     std::vector<Id> selectedUnits_;
-    int buildTab_ = 0;  ///< 0 space, 1 ground, 2 structures, 3 research, 4 heroes
-    float listScroll_ = 0.0f;
+    int category_ = 0;  ///< Index into the command bar's category grid.
+    float trayScroll_ = 0.0f;
+    std::string tipTitle_;
+    std::vector<std::string> tipLines_;
     std::string status_;
     float statusTimer_ = 0.0f;
     bool showHelp_ = false;
