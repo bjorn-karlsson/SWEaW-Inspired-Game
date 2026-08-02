@@ -56,8 +56,8 @@ the bottom, laid out like Empire at War's:
 * **left** — the galactic minimap (click or drag it to jump the camera) with
   the pause and 1x/2x/4x speed controls beneath it
 * **centre** — the production readout for the selected world, the eight
-  category buttons (FLEET, ARMY, ORBIT, SURFACE, RESEARCH, HEROES, WORLD,
-  HOLONET), and the research readout
+  category buttons (FLEET, ARMY, ORBIT, BASE, TECH, HEROES, WORLD, NEWS), and
+  the research readout
 * **status line** — selected world, its weekly income, orbit and surface slot
   usage, faction standings, the week counter with its payday bar, weekly
   income and your treasury
