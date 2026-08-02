@@ -13,8 +13,8 @@ two are run by an AI that plays by exactly the same rules you do.
 | | |
 | --- | --- |
 | ![Main menu](docs/menu.png) | ![Galactic conquest map](docs/galaxy.png) |
-| ![Command console and hero roster](docs/hud.png) | ![Tactical space battle](docs/battle.png) |
-| ![Battle report](docs/summary.png) | |
+| ![Unit info card](docs/card.png) | ![World view](docs/world.png) |
+| ![Tactical space battle](docs/battle.png) | ![Battle report](docs/summary.png) |
 
 ## Building
 
@@ -72,25 +72,51 @@ Your commanders appear as portraits in the top right corner; click one to jump
 to the world it is on. When the game is paused a banner drops down from the top
 of the screen with a RESUME GAME button.
 
+Hovering anything in the tray, a fleet list or a structure slot brings up its
+full dossier: class, role, manufacturer, hull and shields, speed and range,
+weapon loadout, carried squadrons, and what it needs before you can build it.
+
+### The world view
+
+Click a selected world again (or press TAB) to open it. The world view shows
+every force in the system grouped by type with its counts, the orbital and
+surface structure slots as filled or empty sockets, and a dossier panel listing
+the planet's traits, income, slot usage and production tiers. ESC, TAB, right
+click or the button at the bottom takes you back to the star map.
+
+### Scaling and full screen
+
+The HUD is authored against a 1600x900 reference layout and every panel,
+button and font is multiplied by the window's scale factor, so it keeps the
+same proportions on a laptop panel, a 1440p monitor or a 4K screen. The window
+opens at a size that fits your desktop, can be resized freely, and **F11**
+(or Alt+Enter) toggles full screen at any time.
+
 ### Controls
 
 | Input | Action |
 | --- | --- |
 | Left click a world | select it |
 | Right click a world | send the selected units there |
+| Middle mouse drag | pull the galaxy around |
 | Mouse wheel / WASD / arrows | zoom and pan |
 | Space | pause and resume |
 | 1 / 2 / 3 | normal, fast and fastest speed |
 | Q / E / R / F | fleet, army, research and world panels |
+| TAB | open the world view for the selected planet |
+| F11 / Alt+Enter | full screen |
 | F1 | control summary |
 | Esc | clear the selection |
 
 In a tactical battle: drag a box to select, right click to move or attack, `A`
-selects everything, `R` sounds the retreat, space pauses.
+selects everything, `R` sounds the retreat, space pauses, and the middle mouse
+button drags the camera.
 
 Useful switches: `--autostart`, `--campaign N`, `--faction N`, `--difficulty N`,
-`--demo-battle`, `--demo-summary`, `--demo-hud`, and `--screenshot FILE.bmp`
-(renders a few frames, saves the image and exits — used for smoke testing).
+`--fullscreen`, `--window W H`, and, for smoke testing and screenshots,
+`--demo-battle`, `--demo-summary`, `--demo-hud`, `--demo-world`,
+`--mouse X Y` and `--screenshot FILE.bmp` (renders a few frames, saves the
+image and exits). `--help` lists them all.
 
 ### Console client
 

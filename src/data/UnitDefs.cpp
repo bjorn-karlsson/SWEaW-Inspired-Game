@@ -371,6 +371,100 @@ void registerUnits(Database& d) {
     U(d, N, UC::Vehicle, "neu_militia_tank", "Militia Armour")
         .cost(600, 3, 2).stats(520, 80, 28, 18).tac(180, 32).tier(2)
         .desc("A handful of old tanks kept running by the local garrison.").add();
+
+    // =======================================================================
+    // Role and manufacturer, shown on the unit info card.
+    // =======================================================================
+    struct Flavour {
+        const char* key;
+        const char* role;
+        const char* maker;
+    };
+    static const Flavour kFlavour[] = {
+        // Republic
+        {"rep_v19", "Interceptor", "Slayn & Korpil"},
+        {"rep_arc170", "Heavy Fighter", "Incom / Subpro"},
+        {"rep_delta7", "Jedi Interceptor", "Kuat Systems Engineering"},
+        {"rep_ywing", "Torpedo Bomber", "Koensayr Manufacturing"},
+        {"rep_consular", "Picket", "Corellian Engineering Corporation"},
+        {"rep_pelta", "Fleet Support", "Kuat Drive Yards"},
+        {"rep_arquitens", "Line Cruiser", "Kuat Drive Yards"},
+        {"rep_acclamator", "Assault Carrier", "Rothana Heavy Engineering"},
+        {"rep_venator", "Star Destroyer / Carrier", "Kuat Drive Yards"},
+        {"rep_victory", "Line Battleship", "Kuat Drive Yards"},
+        {"rep_clone", "Line Infantry", "Kaminoan Cloners"},
+        {"rep_clone_heavy", "Anti-Armour Infantry", "Kaminoan Cloners"},
+        {"rep_arc_trooper", "Special Forces", "Kaminoan Cloners"},
+        {"rep_atrt", "Scout Walker", "Kuat Drive Yards"},
+        {"rep_saber", "Repulsor Tank", "Rothana Heavy Engineering"},
+        {"rep_atte", "Assault Walker", "Rothana Heavy Engineering"},
+        {"rep_spha", "Siege Artillery", "Rothana Heavy Engineering"},
+        {"rep_juggernaut", "Heavy Assault Vehicle", "Kuat Drive Yards"},
+        {"rep_laat", "Close Air Support", "Rothana Heavy Engineering"},
+        {"rep_hero_obiwan", "Jedi General", "Jedi Order"},
+        {"rep_hero_anakin", "Jedi General", "Jedi Order"},
+        {"rep_hero_yoda", "Grand Master", "Jedi Order"},
+        {"rep_hero_mace", "Jedi General", "Jedi Order"},
+        {"rep_hero_rex", "Clone Captain", "Kaminoan Cloners"},
+        {"rep_hero_yularen", "Fleet Command", "Kuat Drive Yards"},
+        {"rep_hero_bail", "Senator", "Galactic Senate"},
+        // Confederacy
+        {"cis_vulture", "Droid Interceptor", "Haor Chall Engineering"},
+        {"cis_tri", "Droid Interceptor", "Colicoid Creation Nest"},
+        {"cis_hyena", "Droid Bomber", "Baktoid Armour Workshop"},
+        {"cis_diamond", "Picket", "Haor Chall Engineering"},
+        {"cis_munificent", "Long Range Frigate", "Hoersch-Kessel Drive"},
+        {"cis_corona", "Escort Frigate", "Haor Chall Engineering"},
+        {"cis_recusant", "Light Destroyer", "Free Dac Volunteers Engineering"},
+        {"cis_providence", "Dreadnought / Carrier", "Free Dac Volunteers Engineering"},
+        {"cis_lucrehulk", "Battleship / Carrier", "Hoersch-Kessel Drive"},
+        {"cis_b1", "Line Infantry", "Baktoid Combat Automata"},
+        {"cis_b2", "Heavy Infantry", "Baktoid Combat Automata"},
+        {"cis_droideka", "Shielded Assault Droid", "Colicoid Creation Nest"},
+        {"cis_magna", "Bodyguard Droid", "Holowan Mechanicals"},
+        {"cis_aat", "Battle Tank", "Baktoid Armour Workshop"},
+        {"cis_hailfire", "Anti-Armour Missile Platform", "Haor Chall Engineering"},
+        {"cis_octuptarra", "Anti-Infantry Walker", "Techno Union"},
+        {"cis_spider", "Siege Walker", "Baktoid Armour Workshop"},
+        {"cis_crab", "Heavy Tank Droid", "Baktoid Armour Workshop"},
+        {"cis_hyena_air", "Close Air Support", "Baktoid Armour Workshop"},
+        {"cis_hero_grievous", "Supreme Commander", "Confederacy High Command"},
+        {"cis_hero_dooku", "Head of State", "Confederacy High Command"},
+        {"cis_hero_ventress", "Assassin", "Confederacy High Command"},
+        {"cis_hero_durge", "Bounty Hunter", "Independent"},
+        {"cis_hero_trench", "Fleet Command", "Hoersch-Kessel Drive"},
+        {"cis_hero_malevolence", "Heavy Cruiser", "Free Dac Volunteers Engineering"},
+        {"cis_hero_gunray", "Viceroy", "Trade Federation"},
+        // Hutt Cartels
+        {"hutt_z95", "Interceptor", "Incom / Subpro"},
+        {"hutt_skipray", "Assault Gunboat", "Sienar Fleet Systems"},
+        {"hutt_cr90", "Blockade Runner", "Corellian Engineering Corporation"},
+        {"hutt_action6", "Armed Freighter", "Corellian Engineering Corporation"},
+        {"hutt_dp20", "Anti-Fighter Gunship", "Corellian Engineering Corporation"},
+        {"hutt_kaloth", "Battlecruiser", "Kaloth Shipwrights"},
+        {"hutt_dreadnaught", "Heavy Cruiser", "Rendili StarDrive"},
+        {"hutt_providence_bm", "Dreadnought / Carrier", "Free Dac (stolen hull)"},
+        {"hutt_thug", "Militia Infantry", "Cartel Armouries"},
+        {"hutt_gamorrean", "Shock Infantry", "Cartel Armouries"},
+        {"hutt_nikto", "Anti-Armour Infantry", "Cartel Armouries"},
+        {"hutt_merc", "Professional Infantry", "Cartel Armouries"},
+        {"hutt_hover", "Repulsor Tank", "Ubrikkian Industries"},
+        {"hutt_aat", "Battle Tank", "Baktoid (stolen)"},
+        {"hutt_proton", "Siege Artillery", "Merr-Sonn Munitions"},
+        {"hutt_skiff", "Close Air Support", "Ubrikkian Industries"},
+        {"hutt_hero_jabba", "Crime Lord", "Desilijic Clan"},
+        {"hutt_hero_bane", "Bounty Hunter", "Independent"},
+        {"hutt_hero_bossk", "Bounty Hunter", "Independent"},
+        {"hutt_hero_aurra", "Assassin", "Independent"},
+        {"hutt_hero_toth", "Mercenary Flagship", "Sabaoth Squadron"},
+        // Neutral
+        {"neu_fighter", "Defence Squadron", "Local Industry"},
+        {"neu_corvette", "Customs Cutter", "Local Industry"},
+        {"neu_frigate", "Hired Warship", "Independent"},
+        {"neu_militia", "Militia Infantry", "Local Industry"},
+        {"neu_militia_tank", "Militia Armour", "Local Industry"},
+    };
+    for (const Flavour& f : kFlavour) d.setUnitFlavour(f.key, f.role, f.maker);
 }
 
 }  // namespace content

@@ -86,6 +86,10 @@ struct UnitDef {
     Id requiredTech = kInvalid;
     int requiredTier = 1;  ///< Production building tier needed to build this.
 
+    /// Flavour shown on the unit info card, EaW style.
+    std::string role;          ///< "Picket", "Line", "Carrier", ...
+    std::string manufacturer;  ///< Who builds it.
+
     bool isHero = false;
     int heroIncomeBonus = 0;     ///< Weekly credits while the hero is alive.
     float heroCombatBonus = 0.f; ///< Additive force multiplier in its domain.

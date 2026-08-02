@@ -6,15 +6,25 @@ namespace gc {
 namespace ui {
 
 int App::run(const AppOptions& options) {
-    if (!gfx_.init("Galactic Conquest - A Star Wars Empire at War inspired RTS", 1600, 900)) {
+    if (!gfx_.init("Galactic Conquest - A Star Wars Empire at War inspired RTS", options.windowW,
+                   options.windowH)) {
         SDL_Log("Failed to open a window: %s", SDL_GetError());
         return 1;
     }
 
-    if (options.autostart || options.demoBattle || options.demoSummary || options.demoHud) {
+    if (options.fullscreen) gfx_.toggleFullscreen();
+    if (options.mouseX >= 0 && options.mouseY >= 0) {
+        SDL_WarpMouseInWindow(gfx_.window(), options.mouseX, options.mouseY);
+        input_.mouseX = options.mouseX;
+        input_.mouseY = options.mouseY;
+    }
+
+    if (options.autostart || options.demoBattle || options.demoSummary || options.demoHud ||
+        options.demoWorld) {
         startCampaign(options);
     }
-    if (options.demoHud) grantDemoHeroes();
+    if (options.demoHud || options.demoWorld) grantDemoHeroes();
+    if (options.demoWorld) showDossier_ = true;
     if (options.demoBattle || options.demoSummary) startDemoBattle();
     if (options.demoSummary) {
         int guard = 0;
@@ -138,6 +148,10 @@ void App::handleEvents() {
             case SDL_MOUSEMOTION:
                 input_.mouseX = e.motion.x;
                 input_.mouseY = e.motion.y;
+                if (input_.middleDown) {
+                    input_.dragDeltaX += static_cast<float>(e.motion.xrel);
+                    input_.dragDeltaY += static_cast<float>(e.motion.yrel);
+                }
                 break;
             case SDL_MOUSEBUTTONDOWN:
                 if (e.button.button == SDL_BUTTON_LEFT) {
@@ -146,6 +160,8 @@ void App::handleEvents() {
                     input_.dragStartY = e.button.y;
                 } else if (e.button.button == SDL_BUTTON_RIGHT) {
                     input_.rightDown = true;
+                } else if (e.button.button == SDL_BUTTON_MIDDLE) {
+                    input_.middleDown = true;
                 }
                 input_.mouseX = e.button.x;
                 input_.mouseY = e.button.y;
@@ -157,6 +173,8 @@ void App::handleEvents() {
                 } else if (e.button.button == SDL_BUTTON_RIGHT) {
                     input_.rightDown = false;
                     input_.rightClicked = true;
+                } else if (e.button.button == SDL_BUTTON_MIDDLE) {
+                    input_.middleDown = false;
                 }
                 input_.mouseX = e.button.x;
                 input_.mouseY = e.button.y;
@@ -165,7 +183,11 @@ void App::handleEvents() {
                 input_.wheel += e.wheel.y;
                 break;
             case SDL_KEYDOWN:
-                if (e.key.repeat == 0) input_.keysPressed.push_back(e.key.keysym.sym);
+                if (e.key.repeat == 0) {
+                    input_.keysPressed.push_back(e.key.keysym.sym);
+                    bool altEnter = e.key.keysym.sym == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT) != 0;
+                    if (e.key.keysym.sym == SDLK_F11 || altEnter) gfx_.toggleFullscreen();
+                }
                 break;
             default:
                 break;
@@ -230,7 +252,7 @@ void App::startTacticalBattle() {
 void App::fitBattleView() {
     Vec2 field = battle_.fieldSize();
     float viewW = static_cast<float>(gfx_.width());
-    float viewH = static_cast<float>(gfx_.height()) - 152.0f;  // bar + footer
+    float viewH = static_cast<float>(gfx_.height()) - S(152.0f);  // bar + footer
     battleZoom_ = std::min(viewW / std::max(1.0f, field.x), viewH / std::max(1.0f, field.y)) * 0.98f;
     battleZoom_ = std::max(0.3f, std::min(2.5f, battleZoom_));
     battleCamera_ = field * 0.5f;
@@ -251,70 +273,76 @@ void App::drawSummary() {
     const float h = static_cast<float>(gfx_.height());
     gfx_.rect(Rect{0, 0, w, h}, Color(8, 12, 22));
 
-    Rect frame{w * 0.5f - 560, 60, 1120, h - 140};
+    Rect frame{w * 0.5f - std::min(S(560.0f), w * 0.48f), S(60), std::min(S(1120.0f), w * 0.96f),
+               h - S(140)};
     gfx_.panel(frame, pal::kPanel, pal::kBorderBright);
 
     const BattleReport& r = lastReport_;
     std::string title = std::string(r.domain == Domain::Space ? "SPACE BATTLE" : "GROUND BATTLE") +
                         " OVER " + r.planetName;
-    gfx_.textCentred(frame.x + frame.w * 0.5f, frame.y + 18, title, pal::kText, 3);
+    gfx_.textCentred(frame.x + frame.w * 0.5f, frame.y + S(18), title, pal::kText, F(3));
     std::string subtitle = std::string(factionShortName(r.victor)) + " VICTORY";
-    gfx_.textCentred(frame.x + frame.w * 0.5f, frame.y + 52, subtitle, pal::faction(r.victor), 2);
-    gfx_.textCentred(frame.x + frame.w * 0.5f, frame.y + 74,
-                     r.autoResolved ? "resolved by fleet command" : "fought in person", pal::kTextDim, 1);
+    gfx_.textCentred(frame.x + frame.w * 0.5f, frame.y + S(18) + lineH(3) + S(8), subtitle,
+                     pal::faction(r.victor), F(2));
+    gfx_.textCentred(frame.x + frame.w * 0.5f, frame.y + S(18) + lineH(3) + lineH(2) + S(14),
+                     r.autoResolved ? "resolved by fleet command" : "fought in person", pal::kTextDim, F(1));
 
     auto drawSide = [&](const SideSummary& side, float x, float width, bool attacker) {
-        Rect col{x, frame.y + 100, width, frame.h - 170};
+        Rect col{x, frame.y + S(100), width, frame.h - S(170)};
         gfx_.panel(col, pal::kPanelLight, pal::kBorder);
         Color fc = pal::faction(side.faction);
-        gfx_.text(col.x + 12, col.y + 10, std::string(attacker ? "ATTACKER: " : "DEFENDER: ") +
-                                              factionShortName(side.faction), fc, 2);
-        float y = col.y + 40;
-        gfx_.text(col.x + 12, y, "UNIT TYPE", pal::kTextDim, 1);
-        gfx_.text(col.x + width - 210, y, "SENT", pal::kTextDim, 1);
-        gfx_.text(col.x + width - 150, y, "LOST", pal::kTextDim, 1);
-        gfx_.text(col.x + width - 90, y, "LEFT", pal::kTextDim, 1);
-        y += 16;
-        gfx_.line(col.x + 8, y, col.right() - 8, y, pal::kBorder);
-        y += 8;
+        gfx_.text(col.x + S(12), col.y + S(10),
+                  std::string(attacker ? "ATTACKER: " : "DEFENDER: ") + factionShortName(side.faction), fc,
+                  F(2));
+        float y = col.y + S(40);
+        gfx_.text(col.x + S(12), y, "UNIT TYPE", pal::kTextDim, F(1));
+        gfx_.text(col.right() - S(210), y, "SENT", pal::kTextDim, F(1));
+        gfx_.text(col.right() - S(150), y, "LOST", pal::kTextDim, F(1));
+        gfx_.text(col.right() - S(90), y, "LEFT", pal::kTextDim, F(1));
+        y += lineH(1) + S(6);
+        gfx_.line(col.x + S(8), y, col.right() - S(8), y, pal::kBorder);
+        y += S(8);
         for (const SummaryEntry& e : side.entries) {
             const UnitDef& d = db().unit(e.defId);
-            gfx_.text(col.x + 12, y, d.name.substr(0, 30), pal::kText, 1);
-            gfx_.text(col.x + width - 210, y, std::to_string(e.committed), pal::kText, 1);
-            gfx_.text(col.x + width - 150, y, std::to_string(e.lost),
-                      e.lost > 0 ? pal::kDanger : pal::kTextDim, 1);
-            gfx_.text(col.x + width - 90, y, std::to_string(e.survived),
-                      e.survived > 0 ? pal::kGood : pal::kTextDim, 1);
+            gfx_.text(col.x + S(12), y, d.name.substr(0, 30), pal::kText, F(1));
+            gfx_.text(col.right() - S(210), y, std::to_string(e.committed), pal::kText, F(1));
+            gfx_.text(col.right() - S(150), y, std::to_string(e.lost),
+                      e.lost > 0 ? pal::kDanger : pal::kTextDim, F(1));
+            gfx_.text(col.right() - S(90), y, std::to_string(e.survived),
+                      e.survived > 0 ? pal::kGood : pal::kTextDim, F(1));
             if (e.retreated > 0) {
-                gfx_.text(col.x + width - 40, y, "(" + std::to_string(e.retreated) + "R)",
-                          pal::kWarning, 1);
+                gfx_.text(col.right() - S(40), y, "(" + std::to_string(e.retreated) + "R)", pal::kWarning,
+                          F(1));
             }
-            y += 15;
-            if (y > col.bottom() - 70) break;
+            y += lineH(1) + S(4);
+            if (y > col.bottom() - S(70)) break;
         }
-        float footer = col.bottom() - 58;
-        gfx_.line(col.x + 8, footer - 8, col.right() - 8, footer - 8, pal::kBorder);
-        gfx_.text(col.x + 12, footer, "COMMITTED " + std::to_string(side.committed), pal::kText, 1);
-        gfx_.text(col.x + 12, footer + 15, "DESTROYED " + std::to_string(side.lost), pal::kDanger, 1);
-        gfx_.text(col.x + 12, footer + 30,
+        float footer = col.bottom() - S(58);
+        gfx_.line(col.x + S(8), footer - S(8), col.right() - S(8), footer - S(8), pal::kBorder);
+        gfx_.text(col.x + S(12), footer, "COMMITTED " + std::to_string(side.committed), pal::kText, F(1));
+        gfx_.text(col.x + S(12), footer + lineH(1) + S(4), "DESTROYED " + std::to_string(side.lost),
+                  pal::kDanger, F(1));
+        gfx_.text(col.x + S(12), footer + (lineH(1) + S(4)) * 2.0f,
                   "SURVIVED " + std::to_string(side.survived) + "  (WITHDREW " +
                       std::to_string(side.retreated) + ")",
-                  pal::kGood, 1);
-        gfx_.textRight(col.right() - 12, footer + 15,
-                       "LOSSES " + std::to_string(side.creditsLost) + " CR", pal::kWarning, 1);
+                  pal::kGood, F(1));
+        gfx_.textRight(col.right() - S(12), footer + lineH(1) + S(4),
+                       "LOSSES " + std::to_string(side.creditsLost) + " CR", pal::kWarning, F(1));
     };
 
-    drawSide(r.attackerSide, frame.x + 20, frame.w * 0.5f - 30, true);
-    drawSide(r.defenderSide, frame.x + frame.w * 0.5f + 10, frame.w * 0.5f - 30, false);
+    drawSide(r.attackerSide, frame.x + S(20), frame.w * 0.5f - S(30), true);
+    drawSide(r.defenderSide, frame.x + frame.w * 0.5f + S(10), frame.w * 0.5f - S(30), false);
 
     if (r.structuresDestroyed > 0) {
-        gfx_.textCentred(frame.x + frame.w * 0.5f, frame.bottom() - 62,
+        gfx_.textCentred(frame.x + frame.w * 0.5f, frame.bottom() - S(62),
                          std::to_string(r.structuresDestroyed) + " defence structures destroyed",
-                         pal::kWarning, 1);
+                         pal::kWarning, F(1));
     }
 
-    Rect cont{frame.x + frame.w * 0.5f - 110, frame.bottom() - 46, 220, 34};
-    if (button(gfx_, input_, cont, "CONTINUE") || input_.keyPressed(SDLK_RETURN) ||
+    Rect cont{frame.x + frame.w * 0.5f - S(110), frame.bottom() - S(46), S(220), S(34)};
+    ButtonStyle st;
+    st.textScale = F(2);
+    if (button(gfx_, input_, cont, "CONTINUE", true, st) || input_.keyPressed(SDLK_RETURN) ||
         input_.keyPressed(SDLK_SPACE)) {
         screen_ = game_.outcome() == GameOutcome::InProgress ? Screen::Galaxy : Screen::GameOver;
     }
@@ -327,26 +355,26 @@ void App::drawGameOver() {
 
     bool won = game_.outcome() == GameOutcome::Victory;
     gfx_.textCentred(w * 0.5f, h * 0.32f, won ? "TOTAL VICTORY" : "THE WAR IS LOST",
-                     won ? pal::kGood : pal::kDanger, 5);
-    gfx_.textCentred(w * 0.5f, h * 0.32f + 60,
+                     won ? pal::kGood : pal::kDanger, F(5));
+    gfx_.textCentred(w * 0.5f, h * 0.32f + lineH(5) + S(16),
                      won ? "Every world in the galaxy flies your banner."
                          : "Your faction has been driven from the galaxy.",
-                     pal::kText, 2);
+                     pal::kText, F(2));
 
     std::string tally;
     for (Faction f : playableFactions()) {
         tally += std::string(factionShortName(f)) + " " + std::to_string(game_.planetsOwned(f)) + "   ";
     }
-    gfx_.textCentred(w * 0.5f, h * 0.32f + 100, tally, pal::kTextDim, 2);
-    gfx_.textCentred(w * 0.5f, h * 0.32f + 130, "Campaign length: " + game_.date().toString(),
-                     pal::kTextDim, 1);
+    gfx_.textCentred(w * 0.5f, h * 0.32f + lineH(5) + lineH(2) + S(30), tally, pal::kTextDim, F(2));
+    gfx_.textCentred(w * 0.5f, h * 0.32f + lineH(5) + lineH(2) * 2.0f + S(44),
+                     "Campaign length: " + game_.date().toString(), pal::kTextDim, F(1));
 
-    Rect menu{w * 0.5f - 120, h * 0.58f, 240, 36};
-    if (button(gfx_, input_, menu, "MAIN MENU")) {
-        screen_ = Screen::Menu;
-    }
-    Rect quit{w * 0.5f - 120, h * 0.58f + 46, 240, 36};
-    if (button(gfx_, input_, quit, "QUIT")) running_ = false;
+    ButtonStyle st;
+    st.textScale = F(2);
+    Rect menu{w * 0.5f - S(120), h * 0.58f, S(240), S(36)};
+    if (button(gfx_, input_, menu, "MAIN MENU", true, st)) screen_ = Screen::Menu;
+    Rect quit{w * 0.5f - S(120), h * 0.58f + S(46), S(240), S(36)};
+    if (button(gfx_, input_, quit, "QUIT", true, st)) running_ = false;
 }
 
 }  // namespace ui

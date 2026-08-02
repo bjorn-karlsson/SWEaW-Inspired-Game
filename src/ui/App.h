@@ -19,6 +19,12 @@ struct AppOptions {
     bool demoBattle = false;  ///< Drop straight into a tactical battle.
     bool demoSummary = false; ///< Fight a demo battle to the end and show the report.
     bool demoHud = false;     ///< Grant the player's heroes and pause, for HUD screenshots.
+    bool fullscreen = false;  ///< Start full screen (F11 toggles it at any time).
+    bool demoWorld = false;   ///< Open the world view straight away (screenshots).
+    int mouseX = -1;          ///< Dev aid: park the pointer here at start-up.
+    int mouseY = -1;
+    int windowW = 1600;       ///< Requested window size (clamped to the display).
+    int windowH = 900;
     std::string screenshot;   ///< Write this .bmp file, then exit.
     int screenshotFrame = 40;
     int campaign = 0;
@@ -33,6 +39,14 @@ public:
     int run(const AppOptions& options = AppOptions{});
 
 private:
+    /// Reference-layout length scaled to this window.
+    float S(float referenceLength) const { return gfx_.s(referenceLength); }
+    /// Reference font size scaled to this window.
+    int F(int referenceScale) const { return gfx_.fontScale(referenceScale); }
+    float lineH(int referenceScale) const {
+        return static_cast<float>(Gfx::textHeight(F(referenceScale)));
+    }
+
     // --- frame plumbing ---
     void startCampaign(const AppOptions& options);
     void startDemoBattle();
@@ -75,6 +89,9 @@ private:
     void drawPausedBanner();
     void drawBattlePrompt();
     void drawPlanetTooltip();
+    void drawPlanetDossier();
+    /// The detailed EaW-style card for a unit or a structure.
+    void drawInfoCard(const Rect& anchor, Id defId, bool isUnit);
     /// Queues a deferred tooltip so it is drawn on top of everything else.
     void queueTooltip(const std::string& title, const std::vector<std::string>& lines);
     void drawQueuedTooltip();
@@ -109,6 +126,9 @@ private:
     float trayScroll_ = 0.0f;
     std::string tipTitle_;
     std::vector<std::string> tipLines_;
+    Id tipUnit_ = kInvalid;      ///< Unit def shown as a full info card.
+    Id tipBuilding_ = kInvalid;  ///< Structure def shown as a full info card.
+    bool showDossier_ = false;   ///< Full-screen planet view.
     std::string status_;
     float statusTimer_ = 0.0f;
     bool showHelp_ = false;

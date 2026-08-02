@@ -155,6 +155,14 @@ Id Database::addCampaign(CampaignDef d) {
     return campaigns_.back().id;
 }
 
+void Database::setUnitFlavour(const std::string& key, const std::string& role,
+                              const std::string& maker) {
+    Id id = unitId(key);
+    if (id == kInvalid) return;
+    units_[static_cast<size_t>(id)].role = role;
+    units_[static_cast<size_t>(id)].manufacturer = maker;
+}
+
 static Id lookup(const std::unordered_map<std::string, Id>& m, const std::string& key) {
     auto it = m.find(key);
     return it == m.end() ? kInvalid : it->second;

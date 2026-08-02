@@ -60,6 +60,9 @@ struct Input {
     bool mouseClicked = false;   ///< Left button released over the same frame.
     bool rightClicked = false;
     bool rightDown = false;
+    bool middleDown = false;     ///< Middle button held: drag-pans the camera.
+    float dragDeltaX = 0.0f;     ///< Middle-button movement this frame.
+    float dragDeltaY = 0.0f;
     bool shift = false;
     bool ctrl = false;
     int dragStartX = 0, dragStartY = 0;
@@ -75,6 +78,17 @@ class Gfx {
 public:
     bool init(const char* title, int width, int height);
     void shutdown();
+    void toggleFullscreen();
+    bool fullscreen() const { return fullscreen_; }
+
+    /// How much bigger than the 1600x900 reference layout this window is.
+    /// Every panel, button and font size is multiplied by it, so the HUD keeps
+    /// the same proportions on a laptop panel and on a 4K monitor.
+    float uiScale() const { return uiScale_; }
+    /// Scales a reference-layout length.
+    float s(float referenceLength) const { return referenceLength * uiScale_; }
+    /// Scales a bitmap font size; always a whole number so glyphs stay crisp.
+    int fontScale(int referenceScale) const;
 
     SDL_Renderer* renderer() const { return renderer_; }
     SDL_Window* window() const { return window_; }
@@ -113,6 +127,8 @@ private:
     SDL_Renderer* renderer_ = nullptr;
     int width_ = 0;
     int height_ = 0;
+    float uiScale_ = 1.0f;
+    bool fullscreen_ = false;
     std::vector<SDL_Rect> clipStack_;
 };
 

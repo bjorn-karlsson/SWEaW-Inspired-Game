@@ -44,6 +44,8 @@ void Input::newFrame() {
     wheel = 0;
     mouseClicked = false;
     rightClicked = false;
+    dragDeltaX = 0.0f;
+    dragDeltaY = 0.0f;
     keysPressed.clear();
 }
 
@@ -52,6 +54,17 @@ void Input::newFrame() {
 // ---------------------------------------------------------------------------
 bool Gfx::init(const char* title, int width, int height) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) return false;
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
+
+    // Open at a size that actually fits the display: 80% of the desktop, never
+    // larger than the screen itself.
+    SDL_Rect usable;
+    if (SDL_GetDisplayUsableBounds(0, &usable) == 0 && usable.w > 320 && usable.h > 240) {
+        int fitW = static_cast<int>(static_cast<float>(usable.w) * 0.86f);
+        int fitH = static_cast<int>(static_cast<float>(usable.h) * 0.86f);
+        width = std::max(1024, std::min(width > fitW ? fitW : width, usable.w));
+        height = std::max(600, std::min(height > fitH ? fitH : height, usable.h));
+    }
     window_ = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height,
                                SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (window_ == nullptr) return false;
@@ -63,7 +76,20 @@ bool Gfx::init(const char* title, int width, int height) {
     SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
     width_ = width;
     height_ = height;
+    updateSize();
     return true;
+}
+
+void Gfx::toggleFullscreen() {
+    if (window_ == nullptr) return;
+    fullscreen_ = !fullscreen_;
+    SDL_SetWindowFullscreen(window_, fullscreen_ ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    updateSize();
+}
+
+int Gfx::fontScale(int referenceScale) const {
+    int scaled = static_cast<int>(std::lround(static_cast<float>(referenceScale) * uiScale_));
+    return std::max(1, scaled);
 }
 
 void Gfx::shutdown() {
@@ -75,7 +101,16 @@ void Gfx::shutdown() {
 }
 
 void Gfx::updateSize() {
-    if (window_ != nullptr) SDL_GetWindowSize(window_, &width_, &height_);
+    if (renderer_ != nullptr) {
+        SDL_GetRendererOutputSize(renderer_, &width_, &height_);
+    } else if (window_ != nullptr) {
+        SDL_GetWindowSize(window_, &width_, &height_);
+    }
+    // The HUD is authored against 1600x900. Take the smaller of the two axes
+    // so nothing ever runs off the edge of a narrow or a short window.
+    float byHeight = static_cast<float>(height_) / 900.0f;
+    float byWidth = static_cast<float>(width_) / 1520.0f;
+    uiScale_ = std::max(0.62f, std::min(3.0f, std::min(byHeight, byWidth)));
 }
 
 void Gfx::beginFrame(Color clear) {

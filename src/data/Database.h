@@ -54,6 +54,8 @@ public:
     Id addPlanet(PlanetDef d);
     void addLane(const std::string& a, const std::string& b, bool hyperlane);
     Id addCampaign(CampaignDef d);
+    /// Attaches role and manufacturer flavour to an already registered unit.
+    void setUnitFlavour(const std::string& key, const std::string& role, const std::string& maker);
 
 private:
     Database();

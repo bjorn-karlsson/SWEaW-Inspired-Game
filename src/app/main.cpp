@@ -16,6 +16,9 @@ void printUsage() {
         "  --demo-battle            start straight in a tactical space battle\n"
         "  --demo-summary           fight a demo battle to the end, show the report\n"
         "  --demo-hud               grant your heroes and pause (HUD screenshots)\n"
+        "  --fullscreen             start full screen (F11 toggles it in game)\n"
+        "  --window W H             open at this window size\n"
+        "  --mouse X Y              park the pointer there at start-up (dev aid)\n"
         "  --screenshot FILE.bmp    render a few frames, save the image and exit\n"
         "  --frames N               which frame to capture (default 40)\n"
         "  --help                   this text\n");
@@ -38,6 +41,16 @@ int main(int argc, char** argv) {
             options.demoSummary = true;
         } else if (arg == "--demo-hud") {
             options.demoHud = true;
+        } else if (arg == "--demo-world") {
+            options.demoWorld = true;
+        } else if (arg == "--fullscreen") {
+            options.fullscreen = true;
+        } else if (arg == "--window") {
+            options.windowW = next(1600);
+            options.windowH = next(900);
+        } else if (arg == "--mouse") {
+            options.mouseX = next(-1);
+            options.mouseY = next(-1);
         } else if (arg == "--campaign") {
             options.campaign = next(0);
         } else if (arg == "--faction") {
