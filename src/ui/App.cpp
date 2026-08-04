@@ -24,7 +24,12 @@ int App::run(const AppOptions& options) {
         startCampaign(options);
     }
     if (options.demoHud || options.demoWorld) grantDemoHeroes();
-    if (options.demoWorld) showDossier_ = true;
+    if (options.demoWorld) {
+        enterPlanetView(selectedPlanet_);
+        planetViewT_ = 1.0f;
+        planetViewDir_ = 0;
+        updatePlanetTransition(0.0f);
+    }
     if (options.demoBattle || options.demoSummary) startDemoBattle();
     if (options.demoSummary) {
         int guard = 0;

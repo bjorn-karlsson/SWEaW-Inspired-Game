@@ -51,6 +51,7 @@ if(SDL2_FOUND)
     src/ui/App.cpp
     src/ui/MenuScreen.cpp
     src/ui/GalaxyScreen.cpp
+    src/ui/PlanetView.cpp
     src/ui/BattleScreen.cpp
     src/app/main.cpp
   )

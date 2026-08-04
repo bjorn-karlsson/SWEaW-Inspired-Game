@@ -25,6 +25,10 @@ struct UnitInstance {
     Id fleet = kInvalid;   ///< Fleet it travels with (kInvalid when garrisoned).
     bool landed = false;   ///< Ground units: deployed on the surface.
     bool alive = true;
+    /// Which orbital holding slot the unit sits in (0..2). Purely an
+    /// organisational device, like Empire at War's fleets: a slot has no
+    /// capacity of its own. Ground units on the surface always use slot 0.
+    int slot = 0;
 
     const UnitDef& def() const { return db().unit(defId); }
     bool isSpace() const { return isSpaceClass(db().unit(defId).unitClass); }
@@ -228,6 +232,11 @@ public:
     OrderResult queueBuilding(Id planet, Id buildingDefId, Faction f);
     OrderResult cancelBuildOrder(Id planet, int index, Faction f);
     OrderResult startResearch(Faction f, Id techId);
+    /// Moves a unit between the three orbital holding slots.
+    OrderResult setUnitSlot(Id unitId, int slot, Faction f);
+    /// Lifts landed troops back into orbit (they need a friendly orbit).
+    OrderResult liftToOrbit(const std::vector<Id>& unitIds, Faction f);
+    std::vector<Id> unitsInSlot(Id planet, Faction owner, int slot) const;
     OrderResult moveUnits(const std::vector<Id>& unitIds, Id destination);
     /// Land ground units currently in orbit, starting a ground battle if the
     /// world is defended.
@@ -274,6 +283,7 @@ private:
     void checkVictory();
 
     Id spawnUnit(Id defId, Faction owner, Id planet, bool landed);
+    int emptiestSlot(Id planet, Faction owner) const;
     Id spawnBuilding(Id defId, Faction owner, Id planet);
     void destroyUnit(Id unitId);
     void removeUnitFromPlanet(Id unitId);
@@ -309,6 +319,10 @@ private:
 
 /// Seconds of real time per in-game day at normal speed.
 constexpr float kSecondsPerDay = 6.0f;
+
+/// Orbital holding slots per planet, and how many divisions fit on a surface.
+constexpr int kOrbitSlots = 3;
+constexpr int kGroundSlotCapacity = 10;
 
 float speedMultiplier(GameSpeed s);
 

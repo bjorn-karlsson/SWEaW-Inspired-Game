@@ -177,9 +177,68 @@ Id GameState::spawnUnit(Id defId, Faction owner, Id planet, bool landed) {
     u.owner = owner;
     u.health = 1.0f;
     u.landed = landed && isGroundClass(db().unit(defId).unitClass);
+    u.slot = u.landed ? 0 : emptiestSlot(planet, owner);
     units_.push_back(u);
     addUnitToPlanet(u.id, planet);
     return u.id;
+}
+
+int GameState::emptiestSlot(Id planet, Faction owner) const {
+    if (planet == kInvalid) return 0;
+    int counts[kOrbitSlots] = {0, 0, 0};
+    for (Id id : planets_[static_cast<size_t>(planet)].units) {
+        const UnitInstance& u = unit(id);
+        if (!u.alive || u.owner != owner || u.landed) continue;
+        if (u.slot >= 0 && u.slot < kOrbitSlots) ++counts[u.slot];
+    }
+    int best = 0;
+    for (int i = 1; i < kOrbitSlots; ++i) {
+        if (counts[i] < counts[best]) best = i;
+    }
+    return best;
+}
+
+std::vector<Id> GameState::unitsInSlot(Id planet, Faction owner, int slot) const {
+    std::vector<Id> out;
+    if (planet == kInvalid) return out;
+    for (Id id : planets_[static_cast<size_t>(planet)].units) {
+        const UnitInstance& u = unit(id);
+        if (!u.alive || u.owner != owner) continue;
+        if (u.landed) continue;
+        if (u.slot == slot) out.push_back(id);
+    }
+    return out;
+}
+
+OrderResult GameState::setUnitSlot(Id unitId, int slot, Faction f) {
+    if (slot < 0 || slot >= kOrbitSlots) return OrderResult::fail("No such slot");
+    if (unitId < 0 || unitId >= static_cast<Id>(units_.size())) return OrderResult::fail("No such unit");
+    UnitInstance& u = unit(unitId);
+    if (!u.alive || u.owner != f) return OrderResult::fail("Not your unit");
+    if (u.planet == kInvalid) return OrderResult::fail("Unit is in transit");
+    if (u.landed) return OrderResult::fail("Lift the unit into orbit first");
+    u.slot = slot;
+    return OrderResult::success();
+}
+
+OrderResult GameState::liftToOrbit(const std::vector<Id>& unitIds, Faction f) {
+    if (unitIds.empty()) return OrderResult::fail("No units");
+    int lifted = 0;
+    for (Id id : unitIds) {
+        if (id < 0 || id >= static_cast<Id>(units_.size())) continue;
+        UnitInstance& u = unit(id);
+        if (!u.alive || u.owner != f || u.planet == kInvalid) continue;
+        if (u.def().domain() != Domain::Ground || !u.landed) continue;
+        if (!orbitClearFor(u.planet, f)) return OrderResult::fail("Enemy forces hold the orbit");
+        if (planets_[static_cast<size_t>(u.planet)].owner != f) {
+            return OrderResult::fail("You do not hold this world");
+        }
+        u.landed = false;
+        u.slot = emptiestSlot(u.planet, f);
+        ++lifted;
+    }
+    if (lifted == 0) return OrderResult::fail("Nothing to lift into orbit");
+    return OrderResult::success(std::to_string(lifted) + " unit(s) boarded the transports");
 }
 
 Id GameState::spawnBuilding(Id defId, Faction owner, Id planet) {
@@ -289,6 +348,9 @@ int GameState::unitSlotCapacity(Id planet, Domain domain) const {
         const BuildingDef& bd = b.def();
         if (bd.domain == domain) cap += bd.unitSlotBonus;
     }
+    // The surface has room for ten divisions, no matter how much barracks
+    // space is built.
+    if (domain == Domain::Ground) cap = std::min(cap, kGroundSlotCapacity);
     return cap;
 }
 
@@ -796,7 +858,18 @@ OrderResult GameState::invade(Id planet, const std::vector<Id>& unitIds, Faction
     }
     if (landing.empty()) return OrderResult::fail("No ground forces in orbit");
 
-    for (Id id : landing) unit(id).landed = true;
+    // The surface only holds so many divisions.
+    int alreadyDown = static_cast<int>(unitsAt(planet, f, Domain::Ground, true).size());
+    int room = kGroundSlotCapacity - alreadyDown;
+    if (room <= 0) return OrderResult::fail("The surface is full - ten divisions is the limit");
+    if (static_cast<int>(landing.size()) > room) {
+        landing.resize(static_cast<size_t>(room));
+    }
+
+    for (Id id : landing) {
+        unit(id).landed = true;
+        unit(id).slot = 0;
+    }
 
     if (p.owner == f) return OrderResult::success("Ground forces deployed");
 

@@ -1,4 +1,5 @@
 // Simulation tests. No framework: a tiny CHECK macro keeps the build simple.
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -292,6 +293,71 @@ static void testTacticalBattle() {
           "summary counts every unit");
 }
 
+static void testSlotsAndLanding() {
+    std::printf("orbital slots and the surface...\n");
+    GameState gs;
+    GameSetup s;
+    s.campaign = db().campaignId("clone_wars_total");
+    s.playerFaction = Faction::Republic;
+    gs.start(s);
+
+    Id home = kInvalid;
+    for (int i = 0; i < gs.planetCount(); ++i) {
+        if (gs.planet(i).def().key == "coruscant") home = i;
+    }
+    CHECK(home != kInvalid, "found Coruscant");
+    if (home == kInvalid) return;
+
+    // Every ship starts in one of the three orbital slots, and they are spread
+    // out rather than piled into slot 1.
+    std::vector<Id> ships = gs.unitsAt(home, Faction::Republic, Domain::Space);
+    CHECK(!ships.empty(), "Coruscant has a fleet");
+    int perSlot[kOrbitSlots] = {0, 0, 0};
+    for (Id id : ships) {
+        int slot = gs.unit(id).slot;
+        CHECK(slot >= 0 && slot < kOrbitSlots, "slot is in range");
+        if (slot >= 0 && slot < kOrbitSlots) ++perSlot[slot];
+    }
+    int used = 0;
+    for (int i = 0; i < kOrbitSlots; ++i) {
+        if (perSlot[i] > 0) ++used;
+    }
+    CHECK(used > 1, "the fleet is spread over more than one slot");
+
+    // Moving a ship between slots, and the accounting that follows it.
+    Id ship = ships.front();
+    CHECK(gs.setUnitSlot(ship, 2, Faction::Republic).ok, "ship moves to slot 3");
+    CHECK(gs.unit(ship).slot == 2, "slot recorded");
+    std::vector<Id> inSlot = gs.unitsInSlot(home, Faction::Republic, 2);
+    CHECK(std::find(inSlot.begin(), inSlot.end(), ship) != inSlot.end(), "ship is listed in slot 3");
+    CHECK(!gs.setUnitSlot(ship, 7, Faction::Republic).ok, "no fourth slot");
+    CHECK(!gs.setUnitSlot(ship, 1, Faction::CIS).ok, "cannot move someone else's ship");
+
+    // Landed troops need lifting before they can change slot.
+    std::vector<Id> troops = gs.unitsAt(home, Faction::Republic, Domain::Ground, true);
+    CHECK(!troops.empty(), "Coruscant has a garrison");
+    if (!troops.empty()) {
+        CHECK(!gs.setUnitSlot(troops.front(), 1, Faction::Republic).ok, "landed troops have no slot");
+        OrderResult lift = gs.liftToOrbit({troops.front()}, Faction::Republic);
+        CHECK(lift.ok, lift.message.c_str());
+        CHECK(!gs.unit(troops.front()).landed, "the unit is aboard the transports");
+        CHECK(gs.setUnitSlot(troops.front(), 1, Faction::Republic).ok, "now it can change slot");
+    }
+
+    // The surface holds ten divisions and no more.
+    CHECK(gs.unitSlotCapacity(home, Domain::Ground) <= kGroundSlotCapacity,
+          "ground capacity is capped at ten");
+    gs.faction(Faction::Republic).credits = 999999;
+    Id clone = db().unitId("rep_clone");
+    for (int i = 0; i < 40 && gs.canQueueUnit(home, clone, Faction::Republic).ok; ++i) {
+        gs.queueUnit(home, clone, Faction::Republic);
+    }
+    for (int i = 0; i < 4000 && !gs.planet(home).queue.empty(); ++i) gs.update(0.2f);
+    CHECK(static_cast<int>(gs.unitsAt(home, Faction::Republic, Domain::Ground, true).size()) <=
+              kGroundSlotCapacity,
+          "never more than ten divisions on the surface");
+}
+
 static void testAiPlaysByTheRules() {
     std::printf("ai campaign...\n");
     GameState gs;
@@ -371,6 +437,7 @@ int main() {
     testEconomyAndProduction();
     testSlotsAndTraits();
     testAutoresolveAndCapture();
+    testSlotsAndLanding();
     testTacticalBattle();
     testAiPlaysByTheRules();
     testDeterminism();

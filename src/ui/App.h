@@ -70,6 +70,8 @@ private:
     // --- galaxy helpers ---
     Rect mapViewport() const;
     Vec2 worldToScreen(Vec2 world) const;
+    /// Perspective factor for a point on the tilted galactic plane.
+    float perspectiveAt(float worldY) const;
     Vec2 screenToWorld(Vec2 screen) const;
     void focusOn(Id planet);
     void centreCameraOnHomeworld();
@@ -89,7 +91,22 @@ private:
     void drawPausedBanner();
     void drawBattlePrompt();
     void drawPlanetTooltip();
-    void drawPlanetDossier();
+    /// Orbital holding slots and the surface slot, drawn over the selected
+    /// world on the star map.
+    void drawPlanetSlotsOnMap(Id planet);
+
+    // --- planet (world) view ---
+    void enterPlanetView(Id planet);
+    void leavePlanetView();
+    void updatePlanetTransition(float dt);
+    void drawPlanetView();
+    /// One draggable unit tile. Returns true when it was clicked (not dragged).
+    bool drawUnitCell(const Rect& r, Id unitId, int fromSlot, bool fromSurface, bool compact);
+    /// Registers a rectangle as somewhere units can be dropped this frame.
+    void addDropTarget(const Rect& r, int slot, bool surface);
+    /// Applies whatever the player dropped, once the button comes up.
+    void resolveUnitDrop();
+    void drawDraggedUnits();
     /// The detailed EaW-style card for a unit or a structure.
     void drawInfoCard(const Rect& anchor, Id defId, bool isUnit);
     /// Queues a deferred tooltip so it is drawn on top of everything else.
@@ -128,7 +145,31 @@ private:
     std::vector<std::string> tipLines_;
     Id tipUnit_ = kInvalid;      ///< Unit def shown as a full info card.
     Id tipBuilding_ = kInvalid;  ///< Structure def shown as a full info card.
-    bool showDossier_ = false;   ///< Full-screen planet view.
+
+    // The world view and the camera dive into it.
+    Id planetViewTarget_ = kInvalid;
+    float planetViewT_ = 0.0f;  ///< 0 = star map, 1 = world view.
+    int planetViewDir_ = 0;     ///< +1 diving in, -1 pulling out.
+    Vec2 viewCamera_;           ///< Camera actually used for drawing this frame.
+    float viewZoom_ = 1.4f;
+    bool inPlanetView() const { return planetViewT_ > 0.999f; }
+
+    /// Dragging units between the orbital slots and the surface.
+    struct UnitDrag {
+        std::vector<Id> units;
+        int fromSlot = -1;
+        bool fromSurface = false;
+        bool armed = false;    ///< Button down on a unit, not yet a drag.
+        bool active = false;   ///< Past the drag threshold.
+        Vec2 startPos;
+    };
+    UnitDrag drag_;
+    struct DropTarget {
+        Rect rect;
+        int slot = -1;
+        bool surface = false;
+    };
+    std::vector<DropTarget> dropTargets_;
     std::string status_;
     float statusTimer_ = 0.0f;
     bool showHelp_ = false;

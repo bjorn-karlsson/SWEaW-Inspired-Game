@@ -49,8 +49,10 @@ Pick a campaign, a faction and a difficulty, then press **BEGIN CAMPAIGN**.
 
 ### The screen
 
-The star map fills the window and the HUD is a command console welded across
-the bottom, laid out like Empire at War's:
+The star map is a galactic disc seen at an angle, so worlds further away sit
+higher up the screen and shrink into the distance. It fills the window, and the
+HUD is a command console welded across the bottom, laid out like Empire at
+War's:
 
 * **far left** — help, holonet, world dossier and menu buttons
 * **left** — the galactic minimap (click or drag it to jump the camera) with
@@ -76,13 +78,33 @@ Hovering anything in the tray, a fleet list or a structure slot brings up its
 full dossier: class, role, manufacturer, hull and shields, speed and range,
 weapon loadout, carried squadrons, and what it needs before you can build it.
 
-### The world view
+### Fleet slots and the surface
 
-Click a selected world again (or press TAB) to open it. The world view shows
-every force in the system grouped by type with its counts, the orbital and
-surface structure slots as filled or empty sockets, and a dossier panel listing
-the planet's traits, income, slot usage and production tiers. ESC, TAB, right
-click or the button at the bottom takes you back to the star map.
+Every world has **three orbital holding slots** and **one surface slot**. The
+orbital slots are an organising device, exactly like Empire at War's fleets:
+they have no capacity of their own, they just let you keep a strike force, a
+garrison and a reserve apart from one another. The surface slot is the world
+itself and holds **ten divisions**, which is also the hard ceiling on ground
+production there.
+
+Select a world and its three slots appear above it with the surface slot laid
+over the planet. Units are moved by **dragging them from one slot to another**:
+
+* orbit to orbit — reorganise your fleets
+* **orbit to surface** — land the troops (a defended world starts a ground
+  battle, exactly as the INVADE button does)
+* **surface to orbit** — the division boards its transports again
+
+Dragging a selected unit brings the rest of the selection with it.
+
+### Diving into a world
+
+Keep scrolling in on a world and the camera dives down to it and the world view
+opens. It shows the three orbital slots with every ship in them, the planet
+with its ten surface cells, the orbital and surface structure sockets, and a
+dossier panel listing traits, income, slot usage and production tiers. Units
+can be dragged between all of those slots here too. Scroll out, press TAB or
+ESC, or use the button to pull back up to the star map.
 
 ### Scaling and full screen
 
@@ -98,12 +120,14 @@ opens at a size that fits your desktop, can be resized freely, and **F11**
 | --- | --- |
 | Left click a world | select it |
 | Right click a world | send the selected units there |
+| Drag a unit tile | move it between the orbital slots and the surface |
 | Middle mouse drag | pull the galaxy around |
-| Mouse wheel / WASD / arrows | zoom and pan |
+| Mouse wheel | zoom; keep scrolling in on a world to dive into it |
+| WASD / arrows | pan |
 | Space | pause and resume |
 | 1 / 2 / 3 | normal, fast and fastest speed |
 | Q / E / R / F | fleet, army, research and world panels |
-| TAB | open the world view for the selected planet |
+| TAB | open or close the world view for the selected planet |
 | F11 / Alt+Enter | full screen |
 | F1 | control summary |
 | Esc | clear the selection |

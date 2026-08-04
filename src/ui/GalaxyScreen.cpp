@@ -178,25 +178,58 @@ void drawStructureGlyph(Gfx& g, const Rect& r, const BuildingDef& b, Color col) 
 
 }  // namespace
 
+// Shared with PlanetView.cpp so unit tiles look the same everywhere.
+void drawUnitGlyphShared(Gfx& g, const Rect& r, UnitClass c, Color col) {
+    drawUnitGlyph(g, r, c, col);
+}
+void drawStructureGlyphShared(Gfx& g, const Rect& r, const BuildingDef& b, Color col) {
+    drawStructureGlyph(g, r, b, col);
+}
+
 // ---------------------------------------------------------------------------
-// Camera
+// Camera. The star map is a plane seen at an angle: points further "north"
+// sit further away, so they are foreshortened and shrink with distance.
 // ---------------------------------------------------------------------------
 Rect App::mapViewport() const {
     return Rect{0, 0, static_cast<float>(gfx_.width()), static_cast<float>(gfx_.height()) - S(kBarH)};
 }
 
+namespace {
+// Tilt of the galactic plane. cos is the vertical squash, sin how quickly
+// things recede; the focal length controls how strong the perspective is.
+constexpr float kTiltCos = 0.60f;
+constexpr float kTiltSin = 0.80f;
+constexpr float kFocal = 1500.0f;
+}  // namespace
+
+/// Scrolling in past this zoom dives into the world view.
+static constexpr float kZoomDiveThreshold = 3.2f;
+
+float App::perspectiveAt(float worldY) const {
+    float depth = -(worldY - viewCamera_.y) * kTiltSin;
+    float p = kFocal / std::max(200.0f, kFocal + depth);
+    return std::max(0.35f, std::min(2.4f, p));
+}
+
 Vec2 App::worldToScreen(Vec2 world) const {
     Rect vp = mapViewport();
-    float z = zoom_ * gfx_.uiScale();
-    return Vec2(vp.x + vp.w * 0.5f + (world.x - camera_.x) * z,
-                vp.y + vp.h * 0.5f + (world.y - camera_.y) * z);
+    float z = viewZoom_ * gfx_.uiScale();
+    float dx = world.x - viewCamera_.x;
+    float dy = world.y - viewCamera_.y;
+    float p = perspectiveAt(world.y);
+    return Vec2(vp.x + vp.w * 0.5f + dx * z * p, vp.y + vp.h * 0.5f + dy * kTiltCos * z * p);
 }
 
 Vec2 App::screenToWorld(Vec2 screen) const {
     Rect vp = mapViewport();
-    float z = zoom_ * gfx_.uiScale();
-    return Vec2(camera_.x + (screen.x - (vp.x + vp.w * 0.5f)) / z,
-                camera_.y + (screen.y - (vp.y + vp.h * 0.5f)) / z);
+    float z = viewZoom_ * gfx_.uiScale();
+    float X = (screen.x - (vp.x + vp.w * 0.5f)) / z;
+    float Y = (screen.y - (vp.y + vp.h * 0.5f)) / z;
+    float denom = kTiltCos * kFocal + Y * kTiltSin;
+    if (std::fabs(denom) < 1e-3f) denom = denom < 0.0f ? -1e-3f : 1e-3f;
+    float dy = Y * kFocal / denom;
+    float p = kFocal / std::max(200.0f, kFocal - dy * kTiltSin);
+    return Vec2(viewCamera_.x + X / p, viewCamera_.y + dy);
 }
 
 void App::focusOn(Id planet) {
@@ -290,15 +323,23 @@ void App::issueMoveOrder(Id destination) {
 // Update
 // ---------------------------------------------------------------------------
 void App::updateGalaxy(float dt) {
+    updatePlanetTransition(dt);
+
     if (input_.keyPressed(SDLK_SPACE)) game_.togglePause();
     if (input_.keyPressed(SDLK_1)) game_.setSpeed(GameSpeed::Normal);
     if (input_.keyPressed(SDLK_2)) game_.setSpeed(GameSpeed::Fast);
     if (input_.keyPressed(SDLK_3)) game_.setSpeed(GameSpeed::Fastest);
     if (input_.keyPressed(SDLK_F1)) showHelp_ = !showHelp_;
-    if (input_.keyPressed(SDLK_TAB) && selectedPlanet_ != kInvalid) showDossier_ = !showDossier_;
+    if (input_.keyPressed(SDLK_TAB)) {
+        if (planetViewT_ > 0.0f) {
+            leavePlanetView();
+        } else if (selectedPlanet_ != kInvalid) {
+            enterPlanetView(selectedPlanet_);
+        }
+    }
     if (input_.keyPressed(SDLK_ESCAPE)) {
-        if (showDossier_) {
-            showDossier_ = false;
+        if (planetViewT_ > 0.0f) {
+            leavePlanetView();
         } else if (showHelp_) {
             showHelp_ = false;
         } else if (!selectedUnits_.empty()) {
@@ -311,44 +352,63 @@ void App::updateGalaxy(float dt) {
     if (input_.keyPressed(SDLK_f)) category_ = CatWorld;
 
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
-    float z = zoom_ * gfx_.uiScale();
-    float panSpeed = 460.0f * dt * gfx_.uiScale() / z;
-    if (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]) camera_.x -= panSpeed;
-    if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) camera_.x += panSpeed;
-    if (keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) camera_.y -= panSpeed;
-    if (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]) camera_.y += panSpeed;
+    float z = viewZoom_ * gfx_.uiScale();
+    float panSpeed = 460.0f * dt * gfx_.uiScale() / std::max(0.2f, z);
+    if (planetViewT_ <= 0.0f) {
+        if (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]) camera_.x -= panSpeed;
+        if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) camera_.x += panSpeed;
+        if (keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) camera_.y -= panSpeed;
+        if (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]) camera_.y += panSpeed;
 
-    // Hold the middle mouse button and drag to pull the galaxy around.
-    if (input_.middleDown && (input_.dragDeltaX != 0.0f || input_.dragDeltaY != 0.0f)) {
-        camera_.x -= input_.dragDeltaX / z;
-        camera_.y -= input_.dragDeltaY / z;
+        // Hold the middle mouse button and drag to pull the galaxy around.
+        if (input_.middleDown && (input_.dragDeltaX != 0.0f || input_.dragDeltaY != 0.0f)) {
+            camera_.x -= input_.dragDeltaX / z;
+            camera_.y -= input_.dragDeltaY / (z * kTiltCos);
+        }
     }
 
     Rect vp = mapViewport();
     float mx = static_cast<float>(input_.mouseX);
     float my = static_cast<float>(input_.mouseY);
-    bool overMap = vp.contains(mx, my) && !showDossier_;
+    bool overMap = vp.contains(mx, my) && planetViewT_ <= 0.0f;
     if (my < S(120.0f) && mx > static_cast<float>(gfx_.width()) - S(360.0f)) overMap = false;
-
-    if (input_.wheel != 0 && overMap) {
-        Vec2 before = screenToWorld(Vec2(mx, my));
-        zoom_ *= (input_.wheel > 0) ? 1.15f : 1.0f / 1.15f;
-        zoom_ = std::max(0.55f, std::min(4.5f, zoom_));
-        Vec2 after = screenToWorld(Vec2(mx, my));
-        camera_ += before - after;
-    }
 
     hoverPlanet_ = overMap ? planetAtScreen(mx, my) : kInvalid;
 
-    if (!game_.hasPendingPlayerBattle() && !showHelp_ && !showDossier_) {
-        if (overMap && input_.mouseClicked && hoverPlanet_ != kInvalid) {
+    // The wheel zooms; keep scrolling in over a world and the camera dives
+    // down to it and opens the world view. Scrolling out backs away again.
+    if (input_.wheel != 0) {
+        if (planetViewT_ > 0.0f) {
+            if (input_.wheel < 0) leavePlanetView();
+        } else if (overMap) {
+            if (input_.wheel > 0 && zoom_ >= kZoomDiveThreshold) {
+                Id target = hoverPlanet_ != kInvalid ? hoverPlanet_ : selectedPlanet_;
+                if (target != kInvalid) enterPlanetView(target);
+            } else {
+                Vec2 before = screenToWorld(Vec2(mx, my));
+                zoom_ *= (input_.wheel > 0) ? 1.15f : 1.0f / 1.15f;
+                zoom_ = std::max(0.55f, std::min(kZoomDiveThreshold, zoom_));
+                viewZoom_ = zoom_;
+                Vec2 after = screenToWorld(Vec2(mx, my));
+                camera_ += before - after;
+            }
+        }
+    }
+
+    if (!game_.hasPendingPlayerBattle() && !showHelp_ && planetViewT_ <= 0.0f) {
+        if (overMap && input_.mouseClicked && hoverPlanet_ != kInvalid && !drag_.active) {
             if (hoverPlanet_ == selectedPlanet_) {
-                showDossier_ = true;  // click the selected world again to open it
+                enterPlanetView(hoverPlanet_);  // click the selected world again to open it
             } else {
                 selectPlanet(hoverPlanet_);
             }
         }
         if (overMap && input_.rightClicked && hoverPlanet_ != kInvalid) issueMoveOrder(hoverPlanet_);
+    }
+
+    // A press on a unit tile arms a drag; a few pixels of movement starts it.
+    if (drag_.armed && input_.mouseDown && !drag_.active) {
+        if (distance(Vec2(mx, my), drag_.startPos) > S(6.0f)) drag_.active = true;
     }
 
     game_.update(dt);
@@ -358,7 +418,7 @@ void App::updateGalaxy(float dt) {
 // Star map
 // ---------------------------------------------------------------------------
 void App::drawRegionLabels() {
-    if (zoom_ > 2.2f) return;
+    if (viewZoom_ > 2.2f || planetViewT_ > 0.0f) return;
 
     std::map<std::string, std::pair<Vec2, int>> centres;
     Vec2 galaxyCentre;
@@ -384,7 +444,7 @@ void App::drawRegionLabels() {
             spaced += static_cast<char>(std::toupper(ch));
             spaced += ' ';
         }
-        int scale = F(zoom_ > 1.2f ? 5 : 4);
+        int scale = F(viewZoom_ > 1.2f ? 5 : 4);
         float w = static_cast<float>(Gfx::textWidth(spaced, scale));
         float h = static_cast<float>(Gfx::textHeight(scale));
         Rect box{s.x - w * 0.5f, s.y - h * 0.5f, w, h};
@@ -404,6 +464,7 @@ void App::drawRegionLabels() {
 }
 
 void App::drawGalaxy() {
+    dropTargets_.clear();
     Rect vp = mapViewport();
     gfx_.pushClip(vp);
 
@@ -412,12 +473,50 @@ void App::drawGalaxy() {
         seed = seed * 1664525u + 1013904223u;
         return static_cast<float>((seed >> 8) & 0xFFFF) / 65535.0f;
     };
-    for (int i = 0; i < 900; ++i) {
-        Vec2 world(rnd() * 1200.0f - 100.0f, rnd() * 1000.0f - 100.0f);
+
+    // Deep space behind the plane.
+    for (int i = 0; i < 500; ++i) {
+        Vec2 s(rnd() * vp.w, rnd() * vp.h);
+        int v = 40 + static_cast<int>(rnd() * 90.0f);
+        gfx_.rect(Rect{s.x, s.y, 1.0f, 1.0f}, Color(v, v, v + 20 > 255 ? 255 : v + 20));
+    }
+
+    // The galactic disc: soft clouds laid out along a pair of spiral arms and
+    // projected onto the tilted plane, so the map reads as a disc seen from
+    // above and to one side.
+    const Vec2 hub(520.0f, 540.0f);
+    for (int arm = 0; arm < 2; ++arm) {
+        for (int i = 0; i < 130; ++i) {
+            float t = static_cast<float>(i) / 130.0f;
+            float angle = t * 5.4f + static_cast<float>(arm) * 3.14159f + rnd() * 0.28f;
+            float radius = 60.0f + t * 480.0f + rnd() * 60.0f;
+            Vec2 world(hub.x + std::cos(angle) * radius, hub.y + std::sin(angle) * radius * 0.92f);
+            Vec2 s = worldToScreen(world);
+            float p = perspectiveAt(world.y);
+            float r = (26.0f + rnd() * 54.0f) * viewZoom_ * gfx_.uiScale() * p;
+            if (s.x + r < vp.x || s.x - r > vp.right() || s.y + r < vp.y || s.y - r > vp.bottom()) continue;
+            int blue = 34 + static_cast<int>(rnd() * 34.0f);
+            gfx_.circle(s.x, s.y, r, Color(14 + blue / 3, 16 + blue / 2, blue, 16));
+        }
+    }
+    // A brighter core.
+    {
+        Vec2 s = worldToScreen(hub);
+        float p = perspectiveAt(hub.y);
+        float r = 150.0f * viewZoom_ * gfx_.uiScale() * p;
+        for (int i = 4; i >= 1; --i) {
+            gfx_.circle(s.x, s.y, r * static_cast<float>(i) * 0.28f, Color(40, 42, 66, 14));
+        }
+    }
+
+    // Stars sitting in the plane, so they slide correctly as the map moves.
+    for (int i = 0; i < 700; ++i) {
+        Vec2 world(rnd() * 1300.0f - 140.0f, rnd() * 1100.0f - 140.0f);
         Vec2 s = worldToScreen(world);
         if (!vp.contains(s.x, s.y)) continue;
         int v = 60 + static_cast<int>(rnd() * 160.0f);
-        float size = rnd() > 0.93f ? S(2.0f) : S(1.0f);
+        float p = perspectiveAt(world.y);
+        float size = (rnd() > 0.93f ? S(2.0f) : S(1.0f)) * p;
         gfx_.rect(Rect{s.x, s.y, size, size}, Color(v, v, v + 25 > 255 ? 255 : v + 25));
     }
 
@@ -432,8 +531,8 @@ void App::drawGalaxy() {
         if (l.hyperlane) {
             Color c = (oa == ob && oa != Faction::Neutral) ? pal::faction(oa).scaled(0.9f)
                                                            : pal::kHyperlane;
-            gfx_.thickLine(a.x, a.y, b.x, b.y, std::max(S(3.0f), S(4.0f) * zoom_ * 0.55f), c.withAlpha(90));
-            gfx_.thickLine(a.x, a.y, b.x, b.y, std::max(S(1.5f), S(2.0f) * zoom_ * 0.55f), c);
+            gfx_.thickLine(a.x, a.y, b.x, b.y, std::max(S(3.0f), S(4.0f) * viewZoom_ * 0.55f), c.withAlpha(90));
+            gfx_.thickLine(a.x, a.y, b.x, b.y, std::max(S(1.5f), S(2.0f) * viewZoom_ * 0.55f), c);
         } else {
             gfx_.line(a.x, a.y, b.x, b.y, pal::kLane);
         }
@@ -494,7 +593,8 @@ void App::drawGalaxy() {
         const PlanetState& p = game_.planet(i);
         const PlanetDef& pd = p.def();
         Vec2 s = worldToScreen(pd.pos);
-        float r = std::max(S(5.0f), S(pd.spaceOnly ? 6.0f : 9.0f) * zoom_ * 0.8f);
+        float r = std::max(S(5.0f), S(pd.spaceOnly ? 6.0f : 9.0f) * viewZoom_ * 0.8f) *
+                  perspectiveAt(pd.pos.y);
         if (pd.baseIncome > 250) r *= 1.3f;
         Color c = pal::faction(p.owner);
 
@@ -543,13 +643,16 @@ void App::drawGalaxy() {
         const PlanetDef& pd = p.def();
         Vec2 s = worldToScreen(pd.pos);
         if (!vp.contains(s.x, s.y)) continue;
-        float r = std::max(S(5.0f), S(pd.spaceOnly ? 6.0f : 9.0f) * zoom_ * 0.8f);
+        float r = std::max(S(5.0f), S(pd.spaceOnly ? 6.0f : 9.0f) * viewZoom_ * 0.8f) *
+                  perspectiveAt(pd.pos.y);
         if (pd.baseIncome > 250) r *= 1.3f;
 
         bool showIncome = p.owner != Faction::Neutral;
         float w = static_cast<float>(Gfx::textWidth(pd.name, F(2)));
-        Rect plate{s.x - w * 0.5f - S(4), s.y - r - S(22.0f), w + S(8),
-                   showIncome ? S(26.0f) : S(14.0f)};
+        // The selected world wears its slots above it, so its plate drops below.
+        bool below = (i == selectedPlanet_);
+        float plateY = below ? s.y + r + S(22.0f) : s.y - r - S(22.0f);
+        Rect plate{s.x - w * 0.5f - S(4), plateY, w + S(8), showIncome ? S(26.0f) : S(14.0f)};
 
         bool clash = false;
         for (const Rect& other : nameplates) {
@@ -570,18 +673,21 @@ void App::drawGalaxy() {
         }
     }
 
+    // Orbital holding slots and the surface slot over the selected world.
+    if (planetViewT_ <= 0.0f && selectedPlanet_ != kInvalid) drawPlanetSlotsOnMap(selectedPlanet_);
+
     gfx_.popClip();
 
     // The world view takes over the map area, so the overlays that live there
     // step aside while it is open.
-    if (!showDossier_) {
+    if (planetViewT_ <= 0.0f) {
         drawHeroRoster();
         drawPlanetTooltip();
         drawPausedBanner();
     }
     drawCommandBar();
 
-    if (statusTimer_ > 0.0f) {
+    if (statusTimer_ > 0.0f && !status_.empty()) {
         Rect r{S(16), vp.bottom() - S(40),
                static_cast<float>(Gfx::textWidth(status_, F(2))) + S(24), S(28)};
         gfx_.panel(r, kConsoleFill, kConsoleEdge);
@@ -593,13 +699,13 @@ void App::drawGalaxy() {
         gfx_.panel(r, kConsoleFill, pal::kBorderBright);
         gfx_.textCentred(r.x + r.w * 0.5f, r.y + S(14), "CONTROLS", pal::kAccent, F(3));
         const char* lines[] = {
-            "LEFT CLICK PLANET      select; click again to open the world view",
+            "LEFT CLICK PLANET      select; click again to dive into the world",
             "RIGHT CLICK PLANET     send the selected units there",
             "MIDDLE MOUSE DRAG      pull the galaxy around",
-            "MOUSE WHEEL            zoom      WASD/ARROWS  pan",
+            "MOUSE WHEEL            zoom; keep scrolling in to enter a world",
             "SPACE                  pause / resume     1 2 3  speed",
             "Q E R F                fleet / army / research / world panels",
-            "TAB                    world view      F11  full screen",
+            "TAB                    world view       F11  full screen",
             "F1                     this help       ESC  back / clear selection",
             "",
             "RULES OF CONQUEST",
@@ -617,9 +723,102 @@ void App::drawGalaxy() {
         if (button(gfx_, input_, close, "CLOSE")) showHelp_ = false;
     }
 
-    if (showDossier_) drawPlanetDossier();
+    drawPlanetView();
     if (game_.hasPendingPlayerBattle()) drawBattlePrompt();
+
+    // Finish any drag the player just let go of, then paint what is in hand.
+    drawDraggedUnits();
+    if (!input_.mouseDown) {
+        if (drag_.active) {
+            resolveUnitDrop();
+        } else {
+            drag_ = UnitDrag{};
+        }
+    }
     drawQueuedTooltip();
+}
+
+// ---------------------------------------------------------------------------
+// Slot overlay on the star map
+// ---------------------------------------------------------------------------
+void App::drawPlanetSlotsOnMap(Id planet) {
+    const PlanetState& p = game_.planet(planet);
+    const PlanetDef& pd = p.def();
+    Faction me = game_.playerFaction();
+    Faction owner = !game_.allUnitsAt(planet, me).empty() ? me : p.owner;
+    Vec2 centre = worldToScreen(pd.pos);
+    float pr = std::max(S(5.0f), S(pd.spaceOnly ? 6.0f : 9.0f) * viewZoom_ * 0.8f) *
+               perspectiveAt(pd.pos.y);
+
+    const float boxW = S(104);
+    const float boxH = S(58);
+    const float gap = S(6);
+    float totalW = boxW * 3.0f + gap * 2.0f;
+    float top = centre.y - pr - S(30) - boxH;
+    float left = centre.x - totalW * 0.5f;
+
+    Color c = pal::faction(owner);
+    for (int slot = 0; slot < kOrbitSlots; ++slot) {
+        Rect box{left + static_cast<float>(slot) * (boxW + gap), top, boxW, boxH};
+        std::vector<Id> units = game_.unitsInSlot(planet, owner, slot);
+        bool hot = drag_.active &&
+                   box.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY));
+        gfx_.rect(box, hot ? Color(26, 48, 60, 235) : Color(10, 16, 24, 215));
+        gfx_.rectOutline(box, hot ? pal::kAccent : c.withAlpha(190));
+        gfx_.text(box.x + S(4), box.y + S(3), std::to_string(slot + 1), c.scaled(0.9f), F(1));
+        gfx_.textRight(box.right() - S(4), box.y + S(3), std::to_string(units.size()), pal::kTextDim, F(1));
+        if (owner == me) addDropTarget(box, slot, false);
+
+        const float cw = S(22);
+        const float ch = S(20);
+        int perRow = std::max(1, static_cast<int>((box.w - S(6)) / (cw + S(2))));
+        for (size_t i = 0; i < units.size(); ++i) {
+            int row = static_cast<int>(i) / perRow;
+            int col = static_cast<int>(i) % perRow;
+            Rect cell{box.x + S(3) + static_cast<float>(col) * (cw + S(2)),
+                      box.y + S(14) + static_cast<float>(row) * (ch + S(2)), cw, ch};
+            if (cell.bottom() > box.bottom() - S(2)) {
+                gfx_.textRight(box.right() - S(4), box.bottom() - S(10),
+                               "+" + std::to_string(units.size() - i), pal::kWarning, F(1));
+                break;
+            }
+            if (drawUnitCell(cell, units[i], slot, false, true)) toggleUnitSelection(units[i]);
+        }
+    }
+
+    // The surface slot sits on the planet itself.
+    if (!pd.spaceOnly) {
+        std::vector<Id> troops = game_.unitsAt(planet, owner, Domain::Ground, true);
+        float gw = std::max(S(120.0f), pr * 2.6f);
+        float gh = S(46);
+        Rect grid{centre.x - gw * 0.5f, centre.y - gh * 0.35f, gw, gh};
+        bool hot = drag_.active &&
+                   grid.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY));
+        gfx_.rect(grid, hot ? Color(28, 58, 40, 220) : Color(10, 20, 16, 190));
+        gfx_.rectOutline(grid, hot ? pal::kAccent : Color(60, 110, 78, 200));
+        gfx_.text(grid.x + S(3), grid.y - lineH(1) - S(2),
+                  "SURFACE " + std::to_string(troops.size()) + "/" +
+                      std::to_string(kGroundSlotCapacity),
+                  Color(126, 226, 132), F(1));
+        addDropTarget(grid, -1, true);
+
+        const int cols = 5;
+        const int rows = 2;
+        float cw = (grid.w - S(4)) / static_cast<float>(cols);
+        float ch = (grid.h - S(4)) / static_cast<float>(rows);
+        for (int i = 0; i < cols * rows; ++i) {
+            Rect cell{grid.x + S(2) + static_cast<float>(i % cols) * cw,
+                      grid.y + S(2) + static_cast<float>(i / cols) * ch, cw - S(2), ch - S(2)};
+            if (i < static_cast<int>(troops.size())) {
+                if (drawUnitCell(cell, troops[static_cast<size_t>(i)], -1, true, true)) {
+                    toggleUnitSelection(troops[static_cast<size_t>(i)]);
+                }
+            } else {
+                gfx_.rect(cell, Color(9, 16, 14, 160));
+                gfx_.rectOutline(cell, Color(42, 58, 48, 180));
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -737,7 +936,7 @@ void App::drawCommandBar() {
     };
     const StripButton strip[] = {{"?", "Controls and rules (F1)"},
                                  {"H", "Holonet reports"},
-                                 {"W", "World view (TAB)"},
+                                 {"W", "World view (TAB, or scroll in)"},
                                  {"X", "Main menu"}};
     for (int i = 0; i < 4; ++i) {
         Rect r{S(6), iy, S(32), S(32)};
@@ -745,7 +944,7 @@ void App::drawCommandBar() {
             switch (i) {
                 case 0: showHelp_ = !showHelp_; break;
                 case 1: category_ = CatHolonet; break;
-                case 2: showDossier_ = selectedPlanet_ != kInvalid; break;
+                case 2: enterPlanetView(selectedPlanet_); break;
                 case 3: screen_ = Screen::Menu; break;
             }
         }
@@ -1315,6 +1514,7 @@ void App::drawActionCluster(const Rect& area) {
 // ---------------------------------------------------------------------------
 void App::drawMinimap(const Rect& area) {
     gfx_.panel(area, Color(8, 14, 14, 240), kConsoleEdge);
+    gfx_.pushClip(area.inset(2));
 
     Vec2 lo(1e9f, 1e9f), hi(-1e9f, -1e9f);
     for (int i = 0; i < game_.planetCount(); ++i) {
@@ -1344,11 +1544,20 @@ void App::drawMinimap(const Rect& area) {
         if (i == selectedPlanet_) gfx_.rectOutline(Rect{p.x - S(4), p.y - S(4), S(8), S(8)}, pal::kAccent);
     }
 
+    // What the main view is looking at. The tilted projection can throw the
+    // corners a long way off, so the marker is clamped to the minimap.
     Vec2 topLeft = screenToWorld(Vec2(0, 0));
     Vec2 bottomRight = screenToWorld(Vec2(mapViewport().right(), mapViewport().bottom()));
     Vec2 a = toMini(topLeft);
     Vec2 b = toMini(bottomRight);
-    gfx_.rectOutline(Rect{a.x, a.y, b.x - a.x, b.y - a.y}, Color(255, 255, 255, 120));
+    float x0 = std::max(inner.x, std::min(a.x, b.x));
+    float y0 = std::max(inner.y, std::min(a.y, b.y));
+    float x1 = std::min(inner.right(), std::max(a.x, b.x));
+    float y1 = std::min(inner.bottom(), std::max(a.y, b.y));
+    if (x1 > x0 && y1 > y0) {
+        gfx_.rectOutline(Rect{x0, y0, x1 - x0, y1 - y0}, Color(255, 255, 255, 120));
+    }
+    gfx_.popClip();
 
     if (area.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY)) &&
         (input_.mouseClicked || (input_.mouseDown && input_.dragStartX > area.x))) {
@@ -1582,229 +1791,6 @@ void App::drawPlanetTooltip() {
     }
     lines.push_back("CLICK AGAIN FOR THE WORLD VIEW");
     queueTooltip(pd.name, lines);
-}
-
-// ---------------------------------------------------------------------------
-// The world view: fleets, structure slots and the planet dossier
-// ---------------------------------------------------------------------------
-void App::drawPlanetDossier() {
-    if (selectedPlanet_ == kInvalid) {
-        showDossier_ = false;
-        return;
-    }
-    const float w = static_cast<float>(gfx_.width());
-    const float h = static_cast<float>(gfx_.height()) - S(kBarH);
-    const PlanetState& p = game_.planet(selectedPlanet_);
-    const PlanetDef& pd = p.def();
-    Faction me = game_.playerFaction();
-    Color c = pal::faction(p.owner);
-
-    gfx_.rect(Rect{0, 0, w, h}, Color(4, 6, 12, 238));
-
-    // --- title ---
-    gfx_.textCentred(w * 0.5f, S(14), pd.name, c, F(5));
-    gfx_.textCentred(w * 0.5f, S(14) + lineH(5) + S(4),
-                     pd.region + "   -   " + factionShortName(p.owner) +
-                         (pd.spaceOnly ? "   -   SPACE-ONLY SYSTEM" : ""),
-                     pal::kTextDim, F(2));
-
-    // The right hand column holds the planet dossier; everything else lives to
-    // the left of it so nothing ever overlaps.
-    const float infoW = std::min(S(400.0f), w * 0.28f);
-    const float leftW = w - infoW - S(48);
-    const float leftCx = S(24) + leftW * 0.5f;
-    const float top = S(14) + lineH(5) + lineH(2) + S(16);
-
-    // --- fleet boxes ---
-    struct FleetGroup {
-        Faction owner;
-        std::vector<std::pair<Id, int>> counts;
-        int total = 0;
-    };
-    std::vector<FleetGroup> groups;
-    for (int fi = 0; fi < kFactionCount; ++fi) {
-        Faction f = factionFromIndex(fi);
-        std::vector<Id> ids = game_.allUnitsAt(selectedPlanet_, f);
-        if (ids.empty()) continue;
-        FleetGroup g;
-        g.owner = f;
-        for (Id id : ids) {
-            Id defId = game_.unit(id).defId;
-            bool found = false;
-            for (auto& kv : g.counts) {
-                if (kv.first == defId) {
-                    ++kv.second;
-                    found = true;
-                }
-            }
-            if (!found) g.counts.push_back({defId, 1});
-            ++g.total;
-        }
-        groups.push_back(g);
-    }
-
-    const float fleetH = std::min(h * 0.34f, S(300.0f));
-    if (!groups.empty()) {
-        float gap = S(12);
-        float boxW = std::min(S(400.0f),
-                              (leftW - gap * static_cast<float>(groups.size() - 1)) /
-                                  static_cast<float>(groups.size()));
-        float startX = leftCx - (boxW * static_cast<float>(groups.size()) +
-                                 gap * static_cast<float>(groups.size() - 1)) *
-                                    0.5f;
-        for (size_t gi = 0; gi < groups.size(); ++gi) {
-            const FleetGroup& g = groups[gi];
-            Rect box{startX + static_cast<float>(gi) * (boxW + gap), top, boxW, fleetH};
-            Color fc = pal::faction(g.owner);
-            gfx_.rect(box, Color(18, 14, 16, 220));
-            gfx_.rectOutline(box, fc, 2);
-            gfx_.text(box.x + S(10), box.y + S(8), std::string(factionShortName(g.owner)) + " FORCES", fc,
-                      F(2));
-            gfx_.textRight(box.right() - S(10), box.y + S(10), std::to_string(g.total) + " UNITS",
-                           pal::kTextDim, F(1));
-            gfx_.line(box.x + S(8), box.y + S(28), box.right() - S(8), box.y + S(28), fc.withAlpha(120));
-
-            float y = box.y + S(34);
-            const float rowH = S(30);
-            for (const auto& kv : g.counts) {
-                if (y + rowH > box.bottom() - S(4)) {
-                    gfx_.text(box.x + S(10), y, "...", pal::kTextDim, F(1));
-                    break;
-                }
-                const UnitDef& d = db().unit(kv.first);
-                Rect row{box.x + S(6), y, box.w - S(12), rowH - S(2)};
-                if (row.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY))) {
-                    gfx_.rect(row, Color(44, 44, 52, 190));
-                    tipUnit_ = d.id;
-                }
-                Rect icon{row.x + S(2), row.y + S(2), S(36), row.h - S(4)};
-                drawUnitGlyph(gfx_, icon, d.unitClass, fc);
-                gfx_.text(icon.right() + S(8), row.y + S(2), d.name.substr(0, 26), pal::kText, F(1));
-                gfx_.text(icon.right() + S(8), row.y + S(2) + lineH(1) + S(2),
-                          std::string(unitClassName(d.unitClass)) +
-                              (d.domain() == Domain::Ground ? "  (surface)" : ""),
-                          pal::kTextDim, F(1));
-                gfx_.textRight(row.right() - S(6), row.y + row.h * 0.5f - lineH(2) * 0.5f,
-                               "x" + std::to_string(kv.second), fc, F(2));
-                y += rowH;
-            }
-        }
-    }
-
-    // --- structure slots and the world itself ---
-    auto drawSlots = [&](const char* label, Domain domain, float y) {
-        int cap = game_.buildSlotCapacity(selectedPlanet_, domain);
-        if (cap <= 0) return;
-        std::vector<Id> built;
-        for (Id bid : p.buildings) {
-            const BuildingInstance& b = game_.buildingInst(bid);
-            if (b.alive && b.def().domain == domain) built.push_back(bid);
-        }
-        float slotW = S(50);
-        float slotH = S(42);
-        float totalW = static_cast<float>(cap) * (slotW + S(6));
-        float x = leftCx - totalW * 0.5f;
-        gfx_.textRight(x - S(10), y + slotH * 0.5f - lineH(1) * 0.5f, label, pal::kTextDim, F(1));
-        for (int i = 0; i < cap; ++i) {
-            Rect slot{x + static_cast<float>(i) * (slotW + S(6)), y, slotW, slotH};
-            bool filled = i < static_cast<int>(built.size());
-            gfx_.rect(slot, filled ? Color(26, 34, 30, 235) : Color(14, 16, 20, 210));
-            gfx_.rectOutline(slot, filled ? kConsoleEdge : Color(56, 44, 44));
-            if (filled) {
-                const BuildingDef& bd = game_.buildingInst(built[static_cast<size_t>(i)]).def();
-                drawStructureGlyph(gfx_, slot.inset(S(7)), bd, pal::faction(p.owner));
-                if (slot.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY))) {
-                    tipBuilding_ = bd.id;
-                }
-            } else {
-                gfx_.textCentred(slot.x + slot.w * 0.5f, slot.y + slot.h * 0.5f - lineH(1) * 0.5f, "EMPTY",
-                                 Color(78, 66, 66), F(1));
-            }
-        }
-    };
-
-    float orbitY = top + fleetH + S(16);
-    drawSlots("ORBIT", Domain::Space, orbitY);
-
-    float globeR = std::min((h - orbitY - S(180)) * 0.5f, std::min(h * 0.15f, leftW * 0.16f));
-    globeR = std::max(globeR, S(40.0f));
-    Vec2 globe{leftCx, orbitY + S(52) + globeR + S(12)};
-    if (pd.spaceOnly) {
-        gfx_.triangle(Vec2(globe.x, globe.y - globeR), Vec2(globe.x + globeR, globe.y),
-                      Vec2(globe.x - globeR, globe.y), c.scaled(0.8f));
-        gfx_.triangle(Vec2(globe.x, globe.y + globeR), Vec2(globe.x + globeR, globe.y),
-                      Vec2(globe.x - globeR, globe.y), c.scaled(0.55f));
-    } else {
-        gfx_.circle(globe.x, globe.y, globeR, c.scaled(0.30f));
-        gfx_.circle(globe.x - globeR * 0.26f, globe.y - globeR * 0.26f, globeR * 0.58f, c.scaled(0.55f));
-        gfx_.circleOutline(globe.x, globe.y, globeR, c);
-    }
-    if (!pd.spaceOnly) drawSlots("SURFACE", Domain::Ground, globe.y + globeR + S(14));
-
-    // --- planet dossier on the right ---
-    Rect info{w - infoW - S(24), top, infoW, h - top - S(80)};
-    gfx_.panel(info, Color(10, 14, 18, 246), pal::kBorderBright);
-    float y = info.y + S(10);
-    gfx_.text(info.x + S(12), y, pd.name, c, F(3));
-    y += lineH(3) + S(8);
-    y += wrappedText(gfx_, Rect{info.x + S(12), y, info.w - S(24), S(90)}, pd.description, pal::kTextDim,
-                     F(1)) +
-         S(8);
-    for (Trait t : pd.traits) {
-        gfx_.text(info.x + S(12), y, std::string(traitName(t)) + ":", pal::kAccent, F(1));
-        y += lineH(1) + S(2);
-        gfx_.text(info.x + S(24), y, traitDescription(t), pal::kTextDim, F(1));
-        y += lineH(1) + S(5);
-    }
-    y += S(6);
-    gfx_.line(info.x + S(12), y, info.right() - S(12), y, pal::kBorder);
-    y += S(8);
-    auto infoRow = [&](const std::string& label, const std::string& value, Color vc) {
-        gfx_.text(info.x + S(12), y, label, kReadoutDim, F(1));
-        gfx_.textRight(info.right() - S(12), y, value, vc, F(1));
-        y += lineH(1) + S(5);
-    };
-    infoRow("WEEKLY INCOME", credits(game_.planetIncome(selectedPlanet_)), kReadout);
-    infoRow("ORBIT SLOTS",
-            std::to_string(game_.usedUnitSlots(selectedPlanet_, p.owner, Domain::Space)) + " / " +
-                std::to_string(game_.unitSlotCapacity(selectedPlanet_, Domain::Space)),
-            pal::kText);
-    infoRow("SURFACE SLOTS",
-            pd.spaceOnly ? "none"
-                         : std::to_string(game_.usedUnitSlots(selectedPlanet_, p.owner, Domain::Ground)) +
-                               " / " +
-                               std::to_string(game_.unitSlotCapacity(selectedPlanet_, Domain::Ground)),
-            pal::kText);
-    infoRow("ORBITAL STRUCTURES",
-            std::to_string(game_.usedBuildSlots(selectedPlanet_, Domain::Space)) + " / " +
-                std::to_string(game_.buildSlotCapacity(selectedPlanet_, Domain::Space)),
-            pal::kText);
-    infoRow("SURFACE STRUCTURES",
-            pd.spaceOnly ? "none"
-                         : std::to_string(game_.usedBuildSlots(selectedPlanet_, Domain::Ground)) + " / " +
-                               std::to_string(game_.buildSlotCapacity(selectedPlanet_, Domain::Ground)),
-            pal::kText);
-    infoRow("SHIPYARD TIER",
-            std::to_string(game_.bestProductionTier(selectedPlanet_, p.owner, Domain::Space)), pal::kText);
-    infoRow("GROUND FACILITY TIER",
-            std::to_string(game_.bestProductionTier(selectedPlanet_, p.owner, Domain::Ground)), pal::kText);
-    if (game_.isContested(selectedPlanet_)) infoRow("STATUS", "CONTESTED", pal::kDanger);
-    if (p.owner == me && !p.queue.empty()) {
-        infoRow("IN PRODUCTION",
-                (p.queue.front().kind == BuildKind::Unit ? db().unit(p.queue.front().defId).name
-                                                         : db().building(p.queue.front().defId).name)
-                    .substr(0, 22),
-                pal::kWarning);
-    }
-
-    // --- close ---
-    Rect close{w * 0.5f - S(110), h - S(56), S(220), S(36)};
-    ButtonStyle st;
-    st.textScale = F(2);
-    if (button(gfx_, input_, close, "BACK TO THE MAP", true, st) || input_.rightClicked) {
-        showDossier_ = false;
-    }
-    gfx_.textCentred(w * 0.5f, h - S(16), "TAB or ESC returns to the galactic map", pal::kTextDim, F(1));
 }
 
 // ---------------------------------------------------------------------------
