@@ -163,6 +163,7 @@ bool App::drawUnitCell(const Rect& r, Id unitId, int fromSlot, bool fromSurface,
 
     if (hover) {
         tipUnit_ = u.defId;
+        if (mine && !drag_.active) gfx_.requestCursor(CursorKind::Hand);
         if (mine && input_.mouseDown && !drag_.armed && !drag_.active) {
             drag_.armed = true;
             drag_.fromSlot = fromSlot;
@@ -265,6 +266,7 @@ void App::resolveUnitDrop() {
 
 void App::drawDraggedUnits() {
     if (!drag_.active || drag_.units.empty()) return;
+    gfx_.requestCursor(CursorKind::Move);
     float mx = static_cast<float>(input_.mouseX);
     float my = static_cast<float>(input_.mouseY);
     int shown = 0;

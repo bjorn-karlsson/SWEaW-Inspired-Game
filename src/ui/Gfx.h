@@ -75,6 +75,10 @@ struct Input {
     void newFrame();
 };
 
+/// System cursors the HUD can ask for. Numeric order is priority: whichever
+/// requested cursor ranks highest wins for the frame.
+enum class CursorKind { Arrow = 0, Hand = 1, Move = 2 };
+
 /// Thin SDL2 wrapper: primitives, bitmap text and a handful of widgets.
 class Gfx {
 public:
@@ -82,6 +86,15 @@ public:
     void shutdown();
     void toggleFullscreen();
     bool fullscreen() const { return fullscreen_; }
+
+    /// Asks for a cursor shape this frame. Widgets and drag/pan logic call
+    /// this freely; the highest-priority request wins and is applied once,
+    /// at the end of the frame, so a button drawn under the dragged cargo
+    /// can't steal the cursor back from the drag itself.
+    void requestCursor(CursorKind kind);
+    /// Clears the frame's cursor request back to the default arrow. Called
+    /// once per frame before any widgets run.
+    void resetCursorRequest() { pendingCursor_ = CursorKind::Arrow; }
 
     /// How much bigger than the 1600x900 reference layout this window is.
     /// Every panel, button and font size is multiplied by it, so the HUD keeps
@@ -132,6 +145,10 @@ private:
     float uiScale_ = 1.0f;
     bool fullscreen_ = false;
     std::vector<SDL_Rect> clipStack_;
+
+    SDL_Cursor* cursors_[3] = {nullptr, nullptr, nullptr};
+    CursorKind pendingCursor_ = CursorKind::Arrow;
+    CursorKind appliedCursor_ = CursorKind::Arrow;
 };
 
 // ---------------------------------------------------------------------------

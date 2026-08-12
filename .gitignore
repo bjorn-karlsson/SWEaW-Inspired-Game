@@ -3,5 +3,6 @@ build/
 *.a
 .cache/
 compile_commands.json
+/.vs
 unitmods.txt
 unitmods_test.txt

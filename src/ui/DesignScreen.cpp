@@ -239,9 +239,9 @@ void App::drawDesigner() {
     Rect closeBtn{w - S(154), S(10), S(140), S(32)};
     if (button(gfx_, input_, saveBtn, "SAVE ALL", true, hs)) {
         int n = unitmods::save(edit);
-        setStatus(n >= 0 ? std::to_string(n) + " unit(s) written to unitmods.txt"
-                         : "Could not write unitmods.txt");
-        designMessage_ = status_;
+        designMessage_ = n >= 0 ? std::to_string(n) + " unit(s) written to unitmods.txt"
+                                : "Could not write unitmods.txt";
+        setStatus(designMessage_);
     }
     if (button(gfx_, input_, reloadBtn, "RELOAD", true, hs)) {
         int n = unitmods::load(edit, unitmods::kDefaultPath);

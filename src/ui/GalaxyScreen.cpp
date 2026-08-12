@@ -234,7 +234,9 @@ Vec2 App::screenToWorld(Vec2 screen) const {
 
 void App::focusOn(Id planet) {
     if (planet == kInvalid) return;
-    camera_ = game_.planet(planet).def().pos;
+    // Glide there rather than cutting: the player keeps their bearings.
+    cameraTarget_ = game_.planet(planet).def().pos;
+    cameraFlying_ = true;
 }
 
 void App::centreCameraOnHomeworld() {
@@ -248,6 +250,7 @@ void App::centreCameraOnHomeworld() {
         if (selectedPlanet_ == kInvalid) selectedPlanet_ = i;
     }
     if (n > 0) camera_ = sum / static_cast<float>(n);
+    cameraFlying_ = false;
 }
 
 Id App::planetAtScreen(float x, float y) const {
@@ -360,15 +363,32 @@ void App::updateGalaxy(float dt) {
     float z = viewZoom_ * gfx_.uiScale();
     float panSpeed = 460.0f * dt * gfx_.uiScale() / std::max(0.2f, z);
     if (planetViewT_ <= 0.0f) {
-        if (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]) camera_.x -= panSpeed;
-        if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) camera_.x += panSpeed;
-        if (keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) camera_.y -= panSpeed;
-        if (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]) camera_.y += panSpeed;
+        // Any manual pan cancels a fly-to so the two never fight each other.
+        if (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]) { camera_.x -= panSpeed; cameraFlying_ = false; }
+        if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) { camera_.x += panSpeed; cameraFlying_ = false; }
+        if (keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) { camera_.y -= panSpeed; cameraFlying_ = false; }
+        if (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]) { camera_.y += panSpeed; cameraFlying_ = false; }
 
         // Hold the middle mouse button and drag to pull the galaxy around.
-        if (input_.middleDown && (input_.dragDeltaX != 0.0f || input_.dragDeltaY != 0.0f)) {
-            camera_.x -= input_.dragDeltaX / z;
-            camera_.y -= input_.dragDeltaY / (z * kTiltCos);
+        if (input_.middleDown) {
+            gfx_.requestCursor(CursorKind::Move);
+            if (input_.dragDeltaX != 0.0f || input_.dragDeltaY != 0.0f) {
+                cameraFlying_ = false;
+                camera_.x -= input_.dragDeltaX / z;
+                camera_.y -= input_.dragDeltaY / (z * kTiltCos);
+            }
+        }
+
+        // Glide the last stretch toward a focusOn() target, e.g. after
+        // clicking a commander portrait.
+        if (cameraFlying_) {
+            Vec2 delta = cameraTarget_ - camera_;
+            if (delta.length() < 1.5f) {
+                camera_ = cameraTarget_;
+                cameraFlying_ = false;
+            } else {
+                camera_ = lerp(camera_, cameraTarget_, std::min(1.0f, dt * 6.0f));
+            }
         }
     }
 
@@ -379,6 +399,7 @@ void App::updateGalaxy(float dt) {
     if (my < S(120.0f) && mx > static_cast<float>(gfx_.width()) - S(360.0f)) overMap = false;
 
     hoverPlanet_ = overMap ? planetAtScreen(mx, my) : kInvalid;
+    if (hoverPlanet_ != kInvalid) gfx_.requestCursor(CursorKind::Hand);
 
     // The wheel zooms; keep scrolling in over a world and the camera dives
     // down to it and opens the world view. Scrolling out backs away again.
@@ -390,6 +411,7 @@ void App::updateGalaxy(float dt) {
                 Id target = hoverPlanet_ != kInvalid ? hoverPlanet_ : selectedPlanet_;
                 if (target != kInvalid) enterPlanetView(target);
             } else {
+                cameraFlying_ = false;
                 Vec2 before = screenToWorld(Vec2(mx, my));
                 zoom_ *= (input_.wheel > 0) ? 1.15f : 1.0f / 1.15f;
                 zoom_ = std::max(0.55f, std::min(kZoomDiveThreshold, zoom_));
@@ -685,11 +707,27 @@ void App::drawGalaxy() {
     }
     drawCommandBar();
 
-    if (statusTimer_ > 0.0f && !status_.empty()) {
-        Rect r{S(16), vp.bottom() - S(40),
-               static_cast<float>(Gfx::textWidth(status_, F(2))) + S(24), S(28)};
-        gfx_.panel(r, kConsoleFill, kConsoleEdge);
-        gfx_.text(r.x + S(12), r.y + (r.h - lineH(2)) * 0.5f, status_, kReadout, F(2));
+    if (!statusQueue_.empty()) {
+        constexpr float kFadeIn = 0.15f;
+        constexpr float kFadeOut = 0.6f;
+        float y = vp.bottom() - S(40);
+        // Newest toast sits where the old single status line used to live;
+        // older ones stack upward above it and fade out first.
+        for (auto it = statusQueue_.rbegin(); it != statusQueue_.rend(); ++it) {
+            float remaining = it->life - it->age;
+            float alpha = 1.0f;
+            if (it->age < kFadeIn) {
+                alpha = it->age / kFadeIn;
+            } else if (remaining < kFadeOut) {
+                alpha = std::max(0.0f, remaining / kFadeOut);
+            }
+            Rect r{S(16), y, static_cast<float>(Gfx::textWidth(it->text, F(2))) + S(24), S(28)};
+            gfx_.panel(r, kConsoleFill.withAlpha(static_cast<int>(kConsoleFill.a * alpha)),
+                       kConsoleEdge.withAlpha(static_cast<int>(255 * alpha)));
+            gfx_.text(r.x + S(12), r.y + (r.h - lineH(2)) * 0.5f, it->text,
+                      kReadout.withAlpha(static_cast<int>(255 * alpha)), F(2));
+            y -= S(32);
+        }
     }
 
     if (showHelp_) {

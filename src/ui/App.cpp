@@ -221,7 +221,19 @@ void App::handleEvents() {
 }
 
 void App::update(float dt) {
-    if (statusTimer_ > 0.0f) statusTimer_ -= dt;
+    // Cleared here, at the top of the frame, so both the update phase (drag
+    // and pan state) and the draw phase (button and tile hovers) get to ask
+    // for a cursor before it is applied once in Gfx::endFrame().
+    gfx_.resetCursorRequest();
+
+    for (auto it = statusQueue_.begin(); it != statusQueue_.end();) {
+        it->age += dt;
+        if (it->age >= it->life) {
+            it = statusQueue_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 
     switch (screen_) {
         case Screen::Menu:
@@ -254,8 +266,17 @@ void App::draw() {
 }
 
 void App::setStatus(const std::string& message) {
-    status_ = message;
-    statusTimer_ = 4.0f;
+    // Collapse an immediate repeat (e.g. spamming a disabled button) instead
+    // of stacking duplicates, and just refresh its lifetime.
+    if (!statusQueue_.empty() && statusQueue_.back().text == message) {
+        statusQueue_.back().age = 0.0f;
+        return;
+    }
+    statusQueue_.push_back(StatusMessage{message, 0.0f, 4.0f});
+    // Keep the stack readable: drop the oldest once we have more than a
+    // handful on screen at once.
+    constexpr size_t kMaxToasts = 4;
+    if (statusQueue_.size() > kMaxToasts) statusQueue_.erase(statusQueue_.begin());
 }
 
 // ---------------------------------------------------------------------------

@@ -148,6 +148,11 @@ private:
     float zoom_ = 1.4f;
     bool panning_ = false;
     int panLastX_ = 0, panLastY_ = 0;
+    /// Eased fly-to for focusOn(): while true, camera_ glides toward
+    /// cameraTarget_ instead of the jump cut it used to be. Any manual pan
+    /// cancels it so it never fights the player's own input.
+    Vec2 cameraTarget_;
+    bool cameraFlying_ = false;
     Id selectedPlanet_ = kInvalid;
     Id hoverPlanet_ = kInvalid;
     std::vector<Id> selectedUnits_;
@@ -187,8 +192,13 @@ private:
     /// Where this frame's fleet and army badges landed, so the nameplates can
     /// step around them instead of printing through them.
     std::vector<Rect> badgeBoxes_;
-    std::string status_;
-    float statusTimer_ = 0.0f;
+    /// One toast in the status stack: fades in, holds, then fades out.
+    struct StatusMessage {
+        std::string text;
+        float age = 0.0f;   ///< Seconds since it was posted.
+        float life = 4.0f;  ///< Total seconds it lives before expiring.
+    };
+    std::vector<StatusMessage> statusQueue_;
     bool showHelp_ = false;
 
     // Battle.

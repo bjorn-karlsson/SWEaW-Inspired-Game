@@ -79,6 +79,10 @@ bool Gfx::init(const char* title, int width, int height) {
     width_ = width;
     height_ = height;
     updateSize();
+
+    cursors_[static_cast<int>(CursorKind::Arrow)] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+    cursors_[static_cast<int>(CursorKind::Hand)] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+    cursors_[static_cast<int>(CursorKind::Move)] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZEALL);
     return true;
 }
 
@@ -95,11 +99,19 @@ int Gfx::fontScale(int referenceScale) const {
 }
 
 void Gfx::shutdown() {
+    for (SDL_Cursor*& c : cursors_) {
+        if (c != nullptr) SDL_FreeCursor(c);
+        c = nullptr;
+    }
     if (renderer_ != nullptr) SDL_DestroyRenderer(renderer_);
     if (window_ != nullptr) SDL_DestroyWindow(window_);
     renderer_ = nullptr;
     window_ = nullptr;
     SDL_Quit();
+}
+
+void Gfx::requestCursor(CursorKind kind) {
+    if (static_cast<int>(kind) > static_cast<int>(pendingCursor_)) pendingCursor_ = kind;
 }
 
 void Gfx::updateSize() {
@@ -121,7 +133,14 @@ void Gfx::beginFrame(Color clear) {
     SDL_RenderClear(renderer_);
 }
 
-void Gfx::endFrame() { SDL_RenderPresent(renderer_); }
+void Gfx::endFrame() {
+    if (pendingCursor_ != appliedCursor_) {
+        SDL_Cursor* c = cursors_[static_cast<int>(pendingCursor_)];
+        if (c != nullptr) SDL_SetCursor(c);
+        appliedCursor_ = pendingCursor_;
+    }
+    SDL_RenderPresent(renderer_);
+}
 
 void Gfx::rect(const Rect& r, Color c) {
     SDL_SetRenderDrawColor(renderer_, c.r, c.g, c.b, c.a);
@@ -276,6 +295,7 @@ bool Gfx::saveScreenshot(const std::string& path) const {
 bool button(Gfx& g, const Input& in, const Rect& r, const std::string& label, bool enabled,
             const ButtonStyle& style) {
     bool hover = enabled && r.contains(static_cast<float>(in.mouseX), static_cast<float>(in.mouseY));
+    if (hover) g.requestCursor(CursorKind::Hand);
     Color fill = !enabled ? style.fillDisabled : (hover ? style.fillHover : style.fill);
     if (hover && in.mouseDown) fill = fill.scaled(0.75f);
     g.rect(r, fill);
