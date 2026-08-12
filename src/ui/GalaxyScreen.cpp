@@ -672,9 +672,9 @@ void App::drawGalaxy() {
 
         bool showIncome = p.owner != Faction::Neutral;
         float w = static_cast<float>(Gfx::textWidth(pd.name, F(2)));
-        // The selected world wears its slots above it, so its plate drops below.
-        bool below = (i == selectedPlanet_);
-        float plateY = below ? s.y + r + S(22.0f) : s.y - r - S(22.0f);
+        // Fleet tokens sit in orbit above a world, so its name hangs below,
+        // clear of the army token riding on the planet itself.
+        float plateY = s.y + r + S(20.0f);
         Rect plate{s.x - w * 0.5f - S(4), plateY, w + S(8), showIncome ? S(26.0f) : S(14.0f)};
 
         bool clash = false;
@@ -871,6 +871,11 @@ void App::drawHeroRoster() {
 
 // ---------------------------------------------------------------------------
 // Command console
+//
+// Left to right: the system buttons, the clock and treasury over the minimap,
+// the eight category buttons, then the build bar itself - a queue strip with
+// orbital orders on the left and surface orders on the right, and under it two
+// rows of everything this world can lay down.
 // ---------------------------------------------------------------------------
 void App::drawCommandBar() {
     const float w = static_cast<float>(gfx_.width());
@@ -908,11 +913,14 @@ void App::drawCommandBar() {
         iy += S(38);
     }
 
-    // --- minimap and time controls ---
-    Rect mini{S(kIconStripW + 6), bar.y + S(10), S(kMinimapW), S(148)};
+    // --- the clock and the treasury, over the minimap ---
+    Rect clock{S(kIconStripW + 6), bar.y + S(8), S(kMinimapW), S(34)};
+    drawTimeReadout(clock);
+
+    Rect mini{clock.x, clock.bottom() + S(4), S(kMinimapW), barH - S(88)};
     drawMinimap(mini);
 
-    Rect speeds{mini.x, mini.bottom() + S(6), mini.w, S(32)};
+    Rect speeds{mini.x, mini.bottom() + S(4), mini.w, S(28)};
     struct SpeedButton {
         const char* label;
         GameSpeed speed;
@@ -929,62 +937,136 @@ void App::drawCommandBar() {
         }
     }
 
-    // --- centre column ---
-    const float centreX = mini.right() + S(10);
-    const float rightBlockW = S(250);
-    const float centreW = w - centreX - rightBlockW - S(10);
-
-    Rect prod{centreX, bar.y + S(10), centreW * 0.34f, S(58)};
-    Rect grid{prod.right() + S(8), bar.y + S(8), S(268), S(62)};
-    Rect research{grid.right() + S(8), bar.y + S(10), centreX + centreW - (grid.right() + S(8)), S(58)};
-
-    gfx_.panel(prod, kConsoleInner, kConsoleEdge);
-    gfx_.text(prod.x + S(8), prod.y + S(6), "PRODUCTION", kReadoutDim, F(1));
-    if (selectedPlanet_ != kInvalid && !game_.planet(selectedPlanet_).queue.empty()) {
-        const PlanetState& p = game_.planet(selectedPlanet_);
-        const BuildOrder& o = p.queue.front();
-        std::string name =
-            o.kind == BuildKind::Unit ? db().unit(o.defId).name : db().building(o.defId).name;
-        gfx_.text(prod.x + S(8), prod.y + S(20), name.substr(0, 30), kReadout, F(1));
-        float frac = o.totalDays > 0 ? 1.0f - o.daysRemaining / o.totalDays : 0.0f;
-        progressBar(gfx_, Rect{prod.x + S(8), prod.y + S(36), prod.w - S(60), S(12)}, frac, kReadout,
-                    Color(10, 20, 16));
-        gfx_.textRight(prod.right() - S(8), prod.y + S(37), std::to_string(p.queue.size()) + " QUEUED",
-                       kReadoutDim, F(1));
-        if (p.owner == game_.playerFaction()) {
-            Rect cancel{prod.right() - S(30), prod.y + S(18), S(24), S(14)};
-            if (button(gfx_, input_, cancel, "X")) {
-                setStatus(game_.cancelBuildOrder(selectedPlanet_, 0, game_.playerFaction()).message);
-            }
-        }
-    } else {
-        gfx_.text(prod.x + S(8), prod.y + S(26), "NO ORDERS", kReadoutDim, F(2));
-    }
-
+    // --- the eight categories ---
+    Rect grid{mini.right() + S(8), bar.y + S(10), S(216), S(74)};
     drawCategoryGrid(grid);
 
-    gfx_.panel(research, kConsoleInner, kConsoleEdge);
-    gfx_.text(research.x + S(8), research.y + S(6), "RESEARCH", kReadoutDim, F(1));
-    const FactionState& fs = game_.faction(game_.playerFaction());
-    if (!fs.research.empty()) {
-        const ResearchOrder& ro = fs.research.front();
-        gfx_.text(research.x + S(8), research.y + S(20), db().tech(ro.techId).name.substr(0, 30), kReadout,
-                  F(1));
-        progressBar(gfx_, Rect{research.x + S(8), research.y + S(36), research.w - S(16), S(12)},
-                    ro.totalDays > 0 ? 1.0f - ro.daysRemaining / ro.totalDays : 0.0f, kReadout,
-                    Color(10, 20, 16));
-    } else {
-        gfx_.text(research.x + S(8), research.y + S(26), "IDLE", kReadoutDim, F(2));
+    // --- the build bar ---
+    Rect build{grid.right() + S(8), bar.y + S(8), w - grid.right() - S(14), barH - S(16)};
+    Rect queue{build.x, build.y, build.w, S(46)};
+    drawBuildQueue(queue);
+    Rect tray{build.x, queue.bottom() + S(6), build.w, build.bottom() - queue.bottom() - S(6)};
+    drawTray(tray);
+}
+
+// ---------------------------------------------------------------------------
+// Week, payday, income and treasury
+// ---------------------------------------------------------------------------
+void App::drawTimeReadout(const Rect& area) {
+    gfx_.panel(area, kConsoleInner, kConsoleEdge);
+    Faction me = game_.playerFaction();
+
+    std::string week = "WEEK " + std::to_string(game_.date().week() + 1);
+    gfx_.text(area.x + S(8), area.y + S(4), week, pal::kText, F(2));
+
+    float barX = area.x + static_cast<float>(Gfx::textWidth(week, F(2))) + S(16);
+    Rect payday{barX, area.y + S(6), area.right() - barX - S(8), S(9)};
+    float weekFrac = (static_cast<float>(game_.date().dayOfWeek()) + game_.dayFraction()) /
+                     static_cast<float>(kDaysPerWeek);
+    progressBar(gfx_, payday, weekFrac, kReadout, Color(10, 20, 16));
+    if (payday.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY))) {
+        queueTooltip("PAYDAY", {"Day " + std::to_string(game_.date().dayOfWeek() + 1) + " of " +
+                                    std::to_string(kDaysPerWeek),
+                                "Income lands on the first day of the week."});
     }
 
-    Rect status{centreX, bar.y + S(74), centreW, S(22)};
-    drawStatusLine(status);
+    int net = game_.factionNetIncome(me);
+    gfx_.text(area.x + S(8), area.y + S(19), (net < 0 ? "-" : "+") + credits(std::abs(net)) + "/WK",
+              net < 0 ? pal::kDanger : kReadout, F(1));
+    gfx_.textRight(area.right() - S(8), area.y + S(18), credits(game_.faction(me).credits),
+                   pal::kWarning, F(2));
+}
 
-    Rect tray{centreX, bar.y + S(100), centreW, barH - S(108)};
-    drawTray(tray);
+// ---------------------------------------------------------------------------
+// The build queue: orbital orders on the left, surface orders on the right
+// ---------------------------------------------------------------------------
+void App::drawBuildQueue(const Rect& area) {
+    Faction me = game_.playerFaction();
+    float mx = static_cast<float>(input_.mouseX);
+    float my = static_cast<float>(input_.mouseY);
 
-    Rect actions{w - rightBlockW, bar.y + S(8), rightBlockW - S(8), barH - S(16)};
-    drawActionCluster(actions);
+    const float slot = area.h - S(12);
+    const float gap = S(4);
+    const float groupW = static_cast<float>(kQueuePerDomain) * (slot + gap);
+
+    auto drawSide = [&](Domain domain, bool rightAligned) {
+        // Five berths per domain, filled from this world's queue.
+        std::vector<const BuildOrder*> orders;
+        if (selectedPlanet_ != kInvalid) {
+            for (const BuildOrder& o : game_.planet(selectedPlanet_).queue) {
+                Domain d = o.kind == BuildKind::Unit ? db().unit(o.defId).domain()
+                                                     : db().building(o.defId).domain;
+                if (d == domain) orders.push_back(&o);
+            }
+        }
+        for (int i = 0; i < kQueuePerDomain; ++i) {
+            float x = rightAligned ? area.right() - slot - static_cast<float>(i) * (slot + gap)
+                                   : area.x + static_cast<float>(i) * (slot + gap);
+            Rect cell{x, area.y + S(6), slot, slot};
+            bool filled = i < static_cast<int>(orders.size());
+            gfx_.rect(cell, filled ? Color(16, 26, 34, 235) : Color(10, 15, 20, 200));
+            gfx_.rectOutline(cell, filled ? kConsoleEdge : Color(38, 52, 46));
+            if (!filled) continue;
+
+            const BuildOrder& o = *orders[static_cast<size_t>(i)];
+            if (o.kind == BuildKind::Unit) {
+                drawUnitIcon(cell.inset(S(3)), o.defId, me, false);
+            } else {
+                drawStructureGlyph(gfx_, cell.inset(S(3)), db().building(o.defId), pal::faction(me));
+            }
+            // Only the head of the queue is actually being worked on.
+            float frac = o.totalDays > 0 ? 1.0f - o.daysRemaining / o.totalDays : 0.0f;
+            progressBar(gfx_, Rect{cell.x + S(2), cell.bottom() - S(6), cell.w - S(4), S(4)},
+                        i == 0 ? frac : 0.0f, i == 0 ? kReadout : Color(60, 80, 70),
+                        Color(8, 14, 12));
+
+            if (cell.contains(mx, my)) {
+                if (o.kind == BuildKind::Unit) {
+                    tipUnit_ = o.defId;
+                } else {
+                    tipBuilding_ = o.defId;
+                }
+                queueTooltip(std::string(),
+                             {oneDecimal(o.daysRemaining) + " days remaining", "Click to cancel"});
+                if (input_.mouseClicked) {
+                    // Find this order's index in the real queue and drop it.
+                    const std::vector<BuildOrder>& q = game_.planet(selectedPlanet_).queue;
+                    for (size_t qi = 0; qi < q.size(); ++qi) {
+                        if (&q[qi] == &o) {
+                            setStatus(
+                                game_.cancelBuildOrder(selectedPlanet_, static_cast<int>(qi), me)
+                                    .message);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    gfx_.text(area.x + S(2), area.y - S(2), "ORBITAL YARD", kReadoutDim, F(1));
+    drawSide(Domain::Space, false);
+    gfx_.textRight(area.right() - S(2), area.y - S(2), "SURFACE WORKS", kReadoutDim, F(1));
+    drawSide(Domain::Ground, true);
+
+    // Research sits between the two yards: it belongs to the faction, not the
+    // world, but this is where the player looks for "what is cooking".
+    Rect res{area.x + groupW + S(8), area.y + S(6), area.w - 2.0f * groupW - S(16), slot};
+    if (res.w > S(80)) {
+        gfx_.panel(res, Color(12, 20, 26, 220), Color(38, 52, 46));
+        const FactionState& fs = game_.faction(game_.playerFaction());
+        if (!fs.research.empty()) {
+            const ResearchOrder& ro = fs.research.front();
+            gfx_.textCentred(res.x + res.w * 0.5f, res.y + S(4),
+                             db().tech(ro.techId).name.substr(0, 24), kReadout, F(1));
+            progressBar(gfx_, Rect{res.x + S(6), res.bottom() - S(12), res.w - S(12), S(7)},
+                        ro.totalDays > 0 ? 1.0f - ro.daysRemaining / ro.totalDays : 0.0f, kReadout,
+                        Color(10, 20, 16));
+        } else {
+            gfx_.textCentred(res.x + res.w * 0.5f, res.y + res.h * 0.5f - lineH(1) * 0.5f,
+                             "NO RESEARCH", kReadoutDim, F(1));
+        }
+    }
 }
 
 void App::drawCategoryGrid(const Rect& area) {
@@ -1002,7 +1084,7 @@ void App::drawCategoryGrid(const Rect& area) {
             enabled = false;
         }
         ButtonStyle st;
-        st.textScale = F(2);
+        st.textScale = F(1);
         if (category_ == i) {
             if (toggleButton(gfx_, input_, r, kCategoryNames[i], true, enabled)) category_ = i;
         } else if (button(gfx_, input_, r, kCategoryNames[i], enabled, st)) {
@@ -1010,55 +1092,6 @@ void App::drawCategoryGrid(const Rect& area) {
             trayScroll_ = 0.0f;
         }
     }
-}
-
-void App::drawStatusLine(const Rect& area) {
-    gfx_.panel(area, kConsoleInner, kConsoleEdge);
-    Faction me = game_.playerFaction();
-    float x = area.x + S(8);
-    float textY = area.y + (area.h - lineH(2)) * 0.5f;
-    float smallY = area.y + (area.h - lineH(1)) * 0.5f;
-
-    if (selectedPlanet_ != kInvalid) {
-        const PlanetState& p = game_.planet(selectedPlanet_);
-        gfx_.text(x, textY, p.def().name, pal::faction(p.owner), F(2));
-        x += static_cast<float>(Gfx::textWidth(p.def().name, F(2))) + S(16);
-        gfx_.text(x, smallY, "+" + std::to_string(game_.planetIncome(selectedPlanet_)), kReadout, F(1));
-        x += S(60);
-        int su = game_.usedUnitSlots(selectedPlanet_, p.owner, Domain::Space);
-        int sc = game_.unitSlotCapacity(selectedPlanet_, Domain::Space);
-        int gu = game_.usedUnitSlots(selectedPlanet_, p.owner, Domain::Ground);
-        int gc = game_.unitSlotCapacity(selectedPlanet_, Domain::Ground);
-        gfx_.text(x, smallY,
-                  "ORBIT " + std::to_string(su) + "/" + std::to_string(sc) + "   SURFACE " +
-                      std::to_string(gu) + "/" + std::to_string(gc),
-                  kReadoutDim, F(1));
-        x += S(200);
-        if (game_.isContested(selectedPlanet_)) {
-            gfx_.text(x, smallY, "UNDER SIEGE", pal::kDanger, F(1));
-        }
-    }
-
-    float rx = area.right() - S(8);
-    std::string treasury = credits(game_.faction(me).credits);
-    gfx_.textRight(rx, textY, treasury, pal::kWarning, F(2));
-    rx -= static_cast<float>(Gfx::textWidth(treasury, F(2))) + S(18);
-    gfx_.textRight(rx, smallY, "+" + credits(game_.factionIncome(me)) + "/WK", kReadout, F(1));
-    rx -= S(120);
-    Rect weekBar{rx - S(90), area.y + (area.h - S(11)) * 0.5f, S(84), S(11)};
-    float weekFrac = (static_cast<float>(game_.date().dayOfWeek()) + game_.dayFraction()) /
-                     static_cast<float>(kDaysPerWeek);
-    progressBar(gfx_, weekBar, weekFrac, kReadout, Color(10, 20, 16));
-    rx -= S(100);
-    std::string week = "WEEK " + std::to_string(game_.date().week() + 1);
-    gfx_.textRight(rx, textY, week, pal::kText, F(2));
-    rx -= static_cast<float>(Gfx::textWidth(week, F(2))) + S(18);
-    std::string standings;
-    for (Faction f : playableFactions()) {
-        if (game_.faction(f).defeated) continue;
-        standings += std::string(factionShortName(f)) + " " + std::to_string(game_.planetsOwned(f)) + "  ";
-    }
-    gfx_.textRight(rx, smallY, standings, kReadoutDim, F(1));
 }
 
 // ---------------------------------------------------------------------------
@@ -1091,7 +1124,7 @@ void App::drawTray(const Rect& area) {
     const PlanetDef& pd = p.def();
     bool mine = p.owner == me;
 
-    // ---- card strips ----
+    // ---- the build bar: two rows of everything this world can lay down ----
     if (category_ == CatFleet || category_ == CatArmy || category_ == CatOrbit ||
         category_ == CatSurface) {
         if (!mine) {
@@ -1113,10 +1146,6 @@ void App::drawTray(const Rect& area) {
             }
         }
 
-        const float cardW = S(104.0f);
-        const float cardH = area.h - S(8);
-        scrollAxis(true, static_cast<float>(ids.size()) * (cardW + S(6)));
-
         if (ids.empty() || (units && game_.bestProductionTier(selectedPlanet_, me, domain) == 0)) {
             std::string msg = units ? (domain == Domain::Space
                                            ? "BUILD AN ORBITAL STATION BEFORE LAYING DOWN SHIPS"
@@ -1127,56 +1156,43 @@ void App::drawTray(const Rect& area) {
             return;
         }
 
-        float x = area.x + S(4) - trayScroll_;
-        for (Id id : ids) {
-            Rect card{x, area.y + S(4), cardW, cardH};
-            x += cardW + S(6);
-            if (card.right() < area.x || card.x > area.right()) continue;
+        // Two rows, filled column by column so scrolling reveals whole pairs.
+        const float gap = S(4);
+        const float tile = (area.h - gap * 3.0f) * 0.5f;
+        int columns = (static_cast<int>(ids.size()) + 1) / 2;
+        scrollAxis(true, static_cast<float>(columns) * (tile + gap));
+
+        for (size_t n = 0; n < ids.size(); ++n) {
+            Id id = ids[n];
+            int col = static_cast<int>(n) / 2;
+            int row = static_cast<int>(n) % 2;
+            Rect cell{area.x + gap + static_cast<float>(col) * (tile + gap) - trayScroll_,
+                      area.y + gap + static_cast<float>(row) * (tile + gap), tile, tile};
+            if (cell.right() < area.x || cell.x > area.right()) continue;
 
             OrderResult can = units ? game_.canQueueUnit(selectedPlanet_, id, me)
                                     : game_.canQueueBuilding(selectedPlanet_, id, me);
-            bool hover = card.contains(mx, my) && overTray;
-            gfx_.rect(card, hover ? Color(26, 44, 34, 235) : Color(16, 26, 24, 220));
-            gfx_.rectOutline(card, can.ok ? (hover ? pal::kAccent : kConsoleEdge) : Color(78, 44, 44));
+            bool hover = cell.contains(mx, my) && overTray;
+            gfx_.rect(cell, hover ? Color(26, 44, 34, 235) : Color(14, 22, 28, 225));
+            gfx_.rectOutline(cell, can.ok ? (hover ? pal::kAccent : kConsoleEdge) : Color(78, 44, 44));
 
-            Rect icon{card.x + S(4), card.y + S(4), card.w - S(8), cardH * 0.42f};
-            gfx_.rect(icon, Color(8, 14, 14, 200));
-            Color glyphColour = can.ok ? pal::faction(me) : Color(96, 96, 100);
-            std::string name;
+            Rect icon{cell.x + S(2), cell.y + S(2), cell.w - S(4), cell.h * 0.60f};
             int cost;
-            float days;
             if (units) {
                 const UnitDef& u = db().unit(id);
                 drawUnitIcon(icon, id, can.ok ? me : Faction::Neutral, false);
-                (void)glyphColour;
-                gfx_.text(icon.x + S(3), icon.y + S(3), classTag(u.unitClass), kReadoutDim, F(1));
-                if (u.isHero) gfx_.textRight(icon.right() - S(3), icon.y + S(3), "*", pal::kWarning, F(1));
-                name = u.name;
                 cost = game_.unitCost(selectedPlanet_, id);
-                days = game_.unitBuildDays(selectedPlanet_, id);
+                // Population is how a hull's weight reads at a glance.
+                gfx_.textRight(cell.right() - S(3), cell.y + S(2), std::to_string(u.popCost),
+                               u.popCost >= 12 ? pal::kWarning : kReadoutDim, F(1));
+                if (u.isHero) gfx_.text(cell.x + S(3), cell.y + S(2), "*", pal::kWarning, F(1));
             } else {
                 const BuildingDef& b = db().building(id);
-                drawStructureGlyph(gfx_, icon, b, glyphColour);
-                name = b.name;
+                drawStructureGlyph(gfx_, icon, b, can.ok ? pal::faction(me) : Color(96, 96, 100));
                 cost = game_.buildingCost(selectedPlanet_, id);
-                days = game_.buildingBuildDays(selectedPlanet_, id);
             }
-
-            std::string line1 = name;
-            std::string line2;
-            if (name.size() > 17) {
-                size_t cut = name.rfind(' ', 17);
-                if (cut == std::string::npos || cut < 6) cut = 17;
-                line1 = name.substr(0, cut);
-                size_t rest = (cut < name.size() && name[cut] == ' ') ? cut + 1 : cut;
-                line2 = name.substr(rest, 17);
-            }
-            Color nameColour = can.ok ? pal::kText : Color(120, 110, 110);
-            gfx_.text(card.x + S(5), icon.bottom() + S(4), line1, nameColour, F(1));
-            gfx_.text(card.x + S(5), icon.bottom() + S(4) + lineH(1) + S(3), line2, nameColour, F(1));
-            gfx_.text(card.x + S(5), card.bottom() - lineH(2) - S(4), credits(cost), pal::kWarning, F(2));
-            gfx_.textRight(card.right() - S(5), card.bottom() - lineH(1) - S(4), oneDecimal(days) + "D",
-                           kReadoutDim, F(1));
+            gfx_.textCentred(cell.x + cell.w * 0.5f, cell.bottom() - lineH(1) - S(3), credits(cost),
+                             can.ok ? pal::kWarning : Color(120, 110, 110), F(1));
 
             if (hover) {
                 if (units) {
@@ -1377,112 +1393,125 @@ void App::drawTray(const Rect& area) {
 }
 
 // ---------------------------------------------------------------------------
-// Right hand action cluster
+// Force badges on the star map
+//
+// Empire at War shows a world's forces as round tokens in orbit, not as a
+// spreadsheet. A token carries the silhouette of the heaviest ship in the
+// stack and nothing else: no counts, no lists. How big the stack is shows in
+// how many tokens are piled up behind the front one. There is one token per
+// orbital slot, so the three stacks a world's fleet is organised into on the
+// world view are the three stacks you see from orbit, and one more on the
+// planet itself for the army holding the ground.
+//
+// Every token is a drag handle: pick one up and drop it on another world to
+// send it there, or on an army token to land the troops.
 // ---------------------------------------------------------------------------
-void App::drawActionCluster(const Rect& area) {
-    gfx_.panel(area, kConsoleInner, kConsoleEdge);
-    Faction me = game_.playerFaction();
+namespace {
 
-    gfx_.text(area.x + S(8), area.y + S(6), "SELECTED " + std::to_string(selectedUnits_.size()),
-              kReadoutDim, F(1));
-
-    ButtonStyle small;
-    small.textScale = F(2);
-    Rect allShips{area.x + S(8), area.y + S(22), area.w * 0.5f - S(12), S(26)};
-    Rect allTroops{area.x + area.w * 0.5f, area.y + S(22), area.w * 0.5f - S(12), S(26)};
-    if (button(gfx_, input_, allShips, "ALL SHIPS", selectedPlanet_ != kInvalid, small)) {
-        selectAllAt(selectedPlanet_, Domain::Space);
-        category_ = CatWorld;
+/// How many tokens deep a stack is drawn. The ladder doubles: a token stands
+/// for about twelve population, two tokens for twenty-four, and so on up to
+/// five, which is as many as reads clearly at map scale.
+int stackDepth(int population) {
+    const int kRungs[] = {12, 24, 48, 96};
+    int depth = 1;
+    for (int rung : kRungs) {
+        if (population > rung) ++depth;
     }
-    if (button(gfx_, input_, allTroops, "ALL TROOPS", selectedPlanet_ != kInvalid, small)) {
-        selectAllAt(selectedPlanet_, Domain::Ground);
-        category_ = CatWorld;
-    }
+    return std::min(depth, 5);
+}
 
-    bool canWithdraw = selectedPlanet_ != kInvalid && game_.isContested(selectedPlanet_) &&
-                       !game_.allUnitsAt(selectedPlanet_, me).empty();
-    Rect withdraw{area.x + S(8), area.y + S(52), area.w - S(16), S(24)};
-    ButtonStyle danger;
-    danger.fill = Color(62, 30, 30);
-    danger.fillHover = Color(96, 42, 40);
-    danger.border = pal::kDanger;
-    danger.textScale = F(2);
-    if (button(gfx_, input_, withdraw, "WITHDRAW", canWithdraw, danger)) {
-        setStatus(game_.withdraw(selectedPlanet_, me).message);
-        selectedUnits_.clear();
-    }
+}  // namespace
 
-    std::vector<Id> landing;
-    if (selectedPlanet_ != kInvalid) {
-        for (Id id : selectedUnits_) {
-            const UnitInstance& u = game_.unit(id);
-            if (u.alive && u.owner == me && u.planet == selectedPlanet_ &&
-                u.def().domain() == Domain::Ground && !u.landed) {
-                landing.push_back(id);
+int App::stackPopulation(const std::vector<Id>& units) const {
+    int pop = 0;
+    for (Id id : units) pop += game_.unit(id).def().popCost;
+    return pop;
+}
+
+Id App::stackFlagship(const std::vector<Id>& units) const {
+    Id best = kInvalid;
+    int bestCost = -1;
+    for (Id id : units) {
+        const UnitDef& d = game_.unit(id).def();
+        if (d.cost > bestCost) {
+            bestCost = d.cost;
+            best = id;
+        }
+    }
+    return best;
+}
+
+std::vector<std::string> App::stackManifest(const std::vector<Id>& units) const {
+    // Roll identical hulls together, heaviest first, the way a fleet list reads.
+    std::vector<std::pair<Id, int>> tally;
+    for (Id id : units) {
+        Id defId = game_.unit(id).defId;
+        bool found = false;
+        for (std::pair<Id, int>& row : tally) {
+            if (row.first == defId) {
+                ++row.second;
+                found = true;
+                break;
             }
         }
-        if (landing.empty()) {
-            landing = game_.unitsAt(selectedPlanet_, me, Domain::Ground, false, true);
-        }
+        if (!found) tally.push_back({defId, 1});
     }
-    bool canLand = selectedPlanet_ != kInvalid && !landing.empty() &&
-                   !game_.planet(selectedPlanet_).def().spaceOnly &&
-                   game_.orbitClearFor(selectedPlanet_, me);
-    bool hostile = selectedPlanet_ != kInvalid && game_.planet(selectedPlanet_).owner != me;
+    std::sort(tally.begin(), tally.end(),
+              [](const std::pair<Id, int>& a, const std::pair<Id, int>& b) {
+                  return db().unit(a.first).cost > db().unit(b.first).cost;
+              });
 
-    float cx = area.x + area.w * 0.5f;
-    float cy = area.bottom() - S(54);
-    float r = S(44.0f);
-    bool hover = distance(Vec2(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY)),
-                          Vec2(cx, cy)) < r;
-    Color ring = canLand ? (hostile ? pal::kDanger : pal::kAccent) : Color(70, 74, 80);
-    gfx_.circle(cx, cy, r, canLand ? (hover ? Color(52, 30, 30) : Color(30, 40, 40)) : Color(20, 24, 28));
-    gfx_.circleOutline(cx, cy, r, ring);
-    gfx_.circleOutline(cx, cy, r - S(3), ring.withAlpha(120));
-    gfx_.textCentred(cx, cy - lineH(2), hostile ? "INVADE" : "DEPLOY",
-                     canLand ? pal::kText : Color(110, 114, 120), F(2));
-    gfx_.textCentred(cx, cy + S(2), std::to_string(landing.size()) + " UNITS",
-                     canLand ? kReadoutDim : Color(90, 94, 100), F(1));
-    if (canLand && hover) {
-        queueTooltip(hostile ? "INVADE" : "DEPLOY",
-                     {"Land your ground forces from orbit.",
-                      hostile ? "Defended worlds trigger a ground battle; you must hold the surface "
-                                "to take the planet."
-                              : "Troops on the surface defend the world against invasion."});
-        if (input_.mouseClicked) {
-            OrderResult res = game_.invade(selectedPlanet_, landing, me);
-            setStatus(res.message);
-            selectedUnits_.clear();
-        }
-    } else if (!canLand && hover && selectedPlanet_ != kInvalid) {
-        queueTooltip("LANDING UNAVAILABLE",
-                     {game_.planet(selectedPlanet_).def().spaceOnly
-                          ? "This system has no surface: hold orbit to take it."
-                          : (!game_.orbitClearFor(selectedPlanet_, me)
-                                 ? "Enemy ships or orbital guns still hold the orbit."
-                                 : "No ground forces waiting in orbit here.")});
+    std::vector<std::string> lines;
+    for (const std::pair<Id, int>& row : tally) {
+        const UnitDef& d = db().unit(row.first);
+        lines.push_back(std::to_string(row.second) + "x " + d.name + "   (" +
+                        std::to_string(d.popCost * row.second) + " POP)");
+    }
+    return lines;
+}
+
+void App::drawStackToken(const Rect& box, const std::vector<Id>& units, Faction owner, bool hot) {
+    if (units.empty()) return;
+    Color c = pal::faction(owner);
+    float r = std::min(box.w, box.h) * 0.5f;
+    float cx = box.x + box.w * 0.5f;
+    float cy = box.y + box.h * 0.5f;
+
+    // The hidden hulls behind the front one, drawn as offset discs.
+    int depth = stackDepth(stackPopulation(units));
+    for (int i = depth - 1; i >= 1; --i) {
+        float off = static_cast<float>(i) * S(3.5f);
+        gfx_.circle(cx + off, cy - off, r, Color(8, 12, 18, 230));
+        gfx_.circleOutline(cx + off, cy - off, r, c.scaled(0.55f));
+    }
+
+    gfx_.circle(cx, cy, r, hot ? Color(26, 46, 60, 244) : Color(10, 16, 24, 238));
+    gfx_.circleOutline(cx, cy, r, hot ? pal::kAccent : c);
+    gfx_.circleOutline(cx, cy, r - S(1.5f), c.scaled(0.5f));
+
+    Id flagship = stackFlagship(units);
+    if (flagship != kInvalid) {
+        float inner = r * 1.36f;
+        drawUnitIcon(Rect{cx - inner * 0.5f, cy - inner * 0.42f, inner, inner * 0.84f},
+                     game_.unit(flagship).defId, owner, false);
     }
 }
 
-// ---------------------------------------------------------------------------
-// Force badges on the star map
-//
-// Empire at War shows a world's forces as a couple of small icons in orbit,
-// not as a spreadsheet: the fleet is one stack and the army is another. The
-// slots themselves are only unfolded in the world view. Both badges are drag
-// handles - pick one up and drop it on another world to send it there, or on
-// the army badge to land the troops.
-// ---------------------------------------------------------------------------
 void App::drawForceBadges() {
     Faction me = game_.playerFaction();
     float mx = static_cast<float>(input_.mouseX);
     float my = static_cast<float>(input_.mouseY);
+    Rect vp = mapViewport();
+
+    // Tokens shrink with the map so a zoomed-out galaxy does not disappear
+    // under a carpet of discs.
+    const float tokenD = std::max(S(13.0f), std::min(S(28.0f), S(17.0f) * viewZoom_ * 0.85f));
+    const float pitch = tokenD + S(3.0f);
 
     for (int i = 0; i < game_.planetCount(); ++i) {
         const PlanetState& p = game_.planet(i);
         const PlanetDef& pd = p.def();
         Vec2 centre = worldToScreen(pd.pos);
-        Rect vp = mapViewport();
         if (!vp.contains(centre.x, centre.y)) continue;
         float pr = std::max(S(5.0f), S(pd.spaceOnly ? 6.0f : 9.0f) * viewZoom_ * 0.8f) *
                    perspectiveAt(pd.pos.y);
@@ -1496,80 +1525,78 @@ void App::drawForceBadges() {
             if (over) gfx_.circleOutline(centre.x, centre.y, hit, pal::kAccent);
         }
 
-        const float badgeW = S(46.0f);
-        const float badgeH = S(26.0f);
-        float stackX = centre.x + pr + S(5.0f);
-        float stackY = centre.y - pr - S(4.0f);
-
+        // --- orbit ---
+        // Your own three slots are laid out side by side, so what you see from
+        // the star map is the same arrangement you sort out in the world view.
+        // Another faction's internal order is none of your business: their
+        // ships read as a single stack.
+        float rowY = centre.y - pr - S(5.0f) - tokenD;
         for (int fi = 0; fi < kFactionCount; ++fi) {
             Faction f = factionFromIndex(fi);
-            std::vector<Id> ships = game_.unitsAt(i, f, Domain::Space);
-            std::vector<Id> orbitingTroops = game_.unitsAt(i, f, Domain::Ground, false, true);
-            ships.insert(ships.end(), orbitingTroops.begin(), orbitingTroops.end());
-            if (ships.empty()) continue;
+            std::vector<Id> slots[kOrbitSlots];
+            for (Id id : game_.allUnitsAt(i, f)) {
+                const UnitInstance& u = game_.unit(id);
+                if (u.landed) continue;  // On the surface: that is the army token.
+                int slot = f == me ? std::max(0, std::min(kOrbitSlots - 1, u.slot)) : 1;
+                slots[slot].push_back(id);
+            }
+            if (slots[0].empty() && slots[1].empty() && slots[2].empty()) continue;
 
-            Rect badge{stackX, stackY, badgeW, badgeH};
-            stackY -= badgeH + S(3.0f);
-            badgeBoxes_.push_back(badge);
-            Color c = pal::faction(f);
-            bool hot = drag_.active && badge.contains(mx, my);
-            bool hover = badge.contains(mx, my);
-            gfx_.rect(badge, hot ? Color(28, 50, 62, 240) : Color(10, 16, 24, 226));
-            gfx_.rectOutline(badge, hot || hover ? pal::kAccent : c);
+            for (int s = 0; s < kOrbitSlots; ++s) {
+                Rect box{centre.x + static_cast<float>(s - 1) * pitch - tokenD * 0.5f, rowY, tokenD,
+                         tokenD};
+                if (drag_.active && f == me) addDropTarget(box, s, false);
+                if (slots[s].empty()) continue;
+                badgeBoxes_.push_back(box);
 
-            // The heaviest ship in the stack stands for the whole fleet.
-            Id flagship = ships.front();
-            for (Id id : ships) {
-                if (static_cast<int>(game_.unit(id).def().unitClass) <
-                    static_cast<int>(game_.unit(flagship).def().unitClass)) {
-                    flagship = id;
+                bool hover = box.contains(mx, my);
+                drawStackToken(box, slots[s], f, hover || (drag_.active && hover));
+
+                if (f == me) {
+                    if (hover && input_.mouseDown && !drag_.armed && !drag_.active) {
+                        beginStackDrag(slots[s], false);
+                    }
+                    if (hover && input_.mouseClicked && !drag_.active) {
+                        selectPlanet(i);
+                        selectedUnits_ = slots[s];
+                    }
+                }
+                if (hover && !drag_.active) {
+                    std::vector<std::string> lines;
+                    lines.push_back("POPULATION " + std::to_string(stackPopulation(slots[s])) + " / " +
+                                    std::to_string(game_.unitSlotCapacity(i, Domain::Space)));
+                    lines.push_back(std::string());
+                    for (const std::string& l : stackManifest(slots[s])) lines.push_back(l);
+                    if (f == me) {
+                        lines.push_back(std::string());
+                        lines.push_back("Drag onto another world to send this stack there");
+                    }
+                    queueTooltip(f == me ? std::string(factionShortName(f)) + " ORBIT SLOT " +
+                                               std::to_string(s + 1)
+                                         : std::string(factionShortName(f)) + " FLEET",
+                                 lines);
                 }
             }
-            drawUnitIcon(Rect{badge.x + S(2), badge.y + S(2), badgeH - S(4), badgeH - S(4)},
-                         game_.unit(flagship).defId, f, false);
-            gfx_.textRight(badge.right() - S(4), badge.y + (badge.h - lineH(2)) * 0.5f,
-                           "x" + std::to_string(ships.size()), c, F(2));
-
-            if (f == me) {
-                addDropTarget(badge, 0, false);
-                if (hover && input_.mouseDown && !drag_.armed && !drag_.active) {
-                    beginStackDrag(ships, false);
-                }
-                if (hover && input_.mouseClicked && !drag_.active) {
-                    selectPlanet(i);
-                    selectedUnits_ = ships;
-                }
-            }
-            if (hover && !drag_.active) {
-                std::vector<std::string> lines;
-                lines.push_back(std::to_string(ships.size()) + " units in orbit");
-                if (f == me) lines.push_back("Drag to another world to send them there");
-                queueTooltip(std::string(factionShortName(f)) + " FLEET", lines);
-            }
+            rowY -= pitch;
         }
 
-        // The army badge sits on the world itself.
+        // --- the army holding the ground ---
         if (!pd.spaceOnly) {
-            float armyY = centre.y + pr + S(4.0f);
+            // The army rides on the world itself, tucked into its lower left.
+            float armyX = centre.x - pr * 0.5f - tokenD * 0.5f;
+            float armyY = centre.y + pr * 0.35f;
             for (int fi = 0; fi < kFactionCount; ++fi) {
                 Faction f = factionFromIndex(fi);
                 std::vector<Id> troops = game_.unitsAt(i, f, Domain::Ground, true);
                 if (troops.empty()) continue;
-                Rect badge{centre.x - badgeW * 0.5f, armyY, badgeW, badgeH};
-                armyY += badgeH + S(3.0f);
-                badgeBoxes_.push_back(badge);
-                Color c = pal::faction(f);
-                bool hot = drag_.active && badge.contains(mx, my);
-                bool hover = badge.contains(mx, my);
-                gfx_.rect(badge, hot ? Color(30, 58, 40, 240) : Color(10, 20, 16, 226));
-                gfx_.rectOutline(badge, hot || hover ? pal::kAccent : c);
-                drawUnitIcon(Rect{badge.x + S(2), badge.y + S(2), badgeH - S(4), badgeH - S(4)},
-                             game_.unit(troops.front()).defId, f, false);
-                gfx_.textRight(badge.right() - S(4), badge.y + (badge.h - lineH(2)) * 0.5f,
-                               "x" + std::to_string(troops.size()), c, F(2));
+                Rect box{armyX, armyY, tokenD, tokenD};
+                armyX -= pitch;
+                badgeBoxes_.push_back(box);
+                bool hover = box.contains(mx, my);
+                drawStackToken(box, troops, f, hover);
 
                 // Anyone can drop troops here: that is an invasion.
-                addDropTarget(badge, -1, true);
+                addDropTarget(box, -1, true);
                 if (f == me) {
                     if (hover && input_.mouseDown && !drag_.armed && !drag_.active) {
                         beginStackDrag(troops, true);
@@ -1580,16 +1607,23 @@ void App::drawForceBadges() {
                     }
                 }
                 if (hover && !drag_.active) {
-                    queueTooltip(std::string(factionShortName(f)) + " ARMY",
-                                 {std::to_string(troops.size()) + " / " +
-                                      std::to_string(kGroundSlotCapacity) + " divisions on the surface",
-                                  f == me ? "Drag into orbit to load the transports" : ""});
+                    std::vector<std::string> lines;
+                    lines.push_back("POPULATION " + std::to_string(stackPopulation(troops)) + " / " +
+                                    std::to_string(kGroundSlotCapacity));
+                    lines.push_back(std::string());
+                    for (const std::string& l : stackManifest(troops)) lines.push_back(l);
+                    if (f == me) {
+                        lines.push_back(std::string());
+                        lines.push_back("Drag into orbit to load the transports");
+                    }
+                    queueTooltip(std::string(factionShortName(f)) + " ARMY", lines);
                 }
             }
             // Even an empty surface accepts a landing.
-            if (drag_.active && drag_.fromSurface == false) {
-                Rect landing{centre.x - badgeW * 0.5f, centre.y + pr + S(4.0f), badgeW, badgeH};
-                addDropTarget(landing, -1, true);
+            if (drag_.active && !drag_.fromSurface) {
+                addDropTarget(Rect{centre.x - pr * 0.5f - tokenD * 0.5f, centre.y + pr * 0.35f, tokenD,
+                                   tokenD},
+                              -1, true);
             }
         }
     }

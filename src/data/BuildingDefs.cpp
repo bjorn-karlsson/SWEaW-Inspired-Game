@@ -39,6 +39,8 @@ struct B {
         d.shieldStrength = s;
         return *this;
     }
+    /// Extra hulls this structure makes room for. Orbital structures are
+    /// scaled to population like the planet tables are.
     B& slots(int n) {
         d.unitSlotBonus = n;
         return *this;

@@ -57,9 +57,19 @@ std::string serialise(const UnitDef& u) {
     for (const CarriedWing& w : u.wings) {
         o << "  wing " << w.unitKey << " " << w.count << "\n";
     }
+    for (const HullPart& part : u.look.parts) {
+        o << "  part " << static_cast<int>(part.shape) << " " << static_cast<int>(part.tint) << " "
+          << part.x << " " << part.y << " " << part.w << " " << part.h << " "
+          << (part.mirrored ? 1 : 0) << "\n";
+    }
     for (const Hardpoint& h : u.hardpoints) {
-        o << "  hardpoint " << static_cast<int>(h.type) << " " << h.damage << " " << h.range << " "
-          << h.health << " " << h.offsetX << " " << h.offsetY << " " << h.name << "\n";
+        // "mount" carries the whole turret; the older "hardpoint" line, which
+        // stopped at the mount's position, is still read for old files.
+        o << "  mount " << static_cast<int>(h.type) << " " << h.damage << " " << h.range << " "
+          << h.health << " " << h.offsetX << " " << h.offsetY << " "
+          << static_cast<int>(h.projectile) << " " << h.barrels << " " << h.reload << " "
+          << h.projectileSpeed << " " << h.tracking << " " << (h.useOwnColour ? 1 : 0) << " "
+          << h.colour[0] << " " << h.colour[1] << " " << h.colour[2] << " " << h.name << "\n";
     }
     o << "end\n";
     return o.str();
@@ -74,6 +84,7 @@ int load(Database& d, const std::string& path) {
     UnitDef* current = nullptr;
     bool clearedWings = false;
     bool clearedHardpoints = false;
+    bool clearedParts = false;
 
     while (std::getline(file, line)) {
         std::istringstream in(line);
@@ -90,6 +101,7 @@ int load(Database& d, const std::string& path) {
             current->custom = true;
             clearedWings = false;
             clearedHardpoints = false;
+            clearedParts = false;
             ++touched;
             continue;
         }
@@ -150,6 +162,38 @@ int load(Database& d, const std::string& path) {
             in >> w.unitKey >> w.count;
             w.unitId = d.unitId(w.unitKey);
             current->wings.push_back(w);
+        } else if (token == "part") {
+            if (!clearedParts) {
+                current->look.parts.clear();
+                clearedParts = true;
+            }
+            HullPart part;
+            int shape = 0;
+            int tint = 0;
+            int mirrored = 0;
+            in >> shape >> tint >> part.x >> part.y >> part.w >> part.h >> mirrored;
+            part.shape = static_cast<PartShape>(shape);
+            part.tint = static_cast<PartTint>(tint);
+            part.mirrored = mirrored != 0;
+            current->look.parts.push_back(part);
+        } else if (token == "mount") {
+            if (!clearedHardpoints) {
+                current->hardpoints.clear();
+                clearedHardpoints = true;
+            }
+            Hardpoint h;
+            int type = 0;
+            int proj = 0;
+            int own = 0;
+            in >> type >> h.damage >> h.range >> h.health >> h.offsetX >> h.offsetY >> proj >>
+                h.barrels >> h.reload >> h.projectileSpeed >> h.tracking >> own >> h.colour[0] >>
+                h.colour[1] >> h.colour[2];
+            h.type = static_cast<HardpointType>(type);
+            h.projectile = static_cast<ProjectileKind>(proj);
+            h.useOwnColour = own != 0;
+            std::string name = rest(in);
+            if (!name.empty()) h.name = name;
+            current->hardpoints.push_back(h);
         } else if (token == "hardpoint") {
             if (!clearedHardpoints) {
                 current->hardpoints.clear();

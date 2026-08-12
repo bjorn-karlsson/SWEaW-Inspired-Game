@@ -49,6 +49,10 @@ int main(int argc, char** argv) {
         } else if (arg == "--designer-unit" && i + 1 < argc) {
             options.demoDesigner = true;
             options.designerUnit = argv[++i];
+        } else if (arg == "--designer-mount") {
+            options.designerMount = next(0);
+        } else if (arg == "--designer-scroll") {
+            options.designerScroll = static_cast<float>(next(0));
         } else if (arg == "--fullscreen") {
             options.fullscreen = true;
         } else if (arg == "--window") {

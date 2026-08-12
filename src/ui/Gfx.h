@@ -181,6 +181,13 @@ bool numberField(Gfx& g, const Input& in, const Rect& r, float& value, float ste
 /// [<] name [>] cycler over a list of names.
 bool enumField(Gfx& g, const Input& in, const Rect& r, int& value, const char* const* names, int count,
                int scale);
+/// The closed half of a dropdown: current value plus a chevron. Returns true
+/// when it is clicked, which the caller turns into "open" or "close".
+bool dropdownBox(Gfx& g, const Input& in, const Rect& r, const std::string& value, bool open, int scale);
+/// The open half, drawn over everything else. Returns the index the player
+/// picked, -2 while the list is still up, or -1 if they clicked away from it.
+int dropdownList(Gfx& g, const Input& in, const Rect& anchor, const char* const* names, int count,
+                 int current, int scale);
 /// Draws `text` wrapped to the width of `r`; returns the height used.
 float wrappedText(Gfx& g, const Rect& r, const std::string& s, Color c, int scale = 1);
 

@@ -152,9 +152,11 @@ void GameState::seedNeutralGarrisons() {
         const PlanetDef& pd = p.def();
         Id idx = static_cast<Id>(i);
 
-        int spaceStrength = 1 + pd.spaceUnitSlots / 3;
+        // Orbital capacity is population; the garrison is counted in hulls.
+        int berths = pd.spaceUnitSlots / kOrbitPopPerSlot;
+        int spaceStrength = 1 + berths / 3;
         for (int n = 0; n < spaceStrength; ++n) {
-            Id defId = (n == 0 && pd.spaceUnitSlots >= 6) ? frigate : (n % 2 == 0 ? corvette : fighter);
+            Id defId = (n == 0 && berths >= 6) ? frigate : (n % 2 == 0 ? corvette : fighter);
             spawnUnit(defId, Faction::Neutral, idx, false);
         }
         if (!pd.spaceOnly) {
@@ -338,6 +340,15 @@ int GameState::usedUnitSlots(Id planet, Faction owner, Domain domain) const {
     return used;
 }
 
+int GameState::queuedInDomain(Id planet, Domain domain) const {
+    int n = 0;
+    for (const BuildOrder& o : planets_[static_cast<size_t>(planet)].queue) {
+        Domain d = o.kind == BuildKind::Unit ? db().unit(o.defId).domain() : db().building(o.defId).domain;
+        if (d == domain) ++n;
+    }
+    return n;
+}
+
 int GameState::unitSlotCapacity(Id planet, Domain domain) const {
     const PlanetState& p = planets_[static_cast<size_t>(planet)];
     const PlanetDef& pd = p.def();
@@ -346,7 +357,10 @@ int GameState::unitSlotCapacity(Id planet, Domain domain) const {
         const BuildingInstance& b = buildingInst(bid);
         if (!b.alive || b.owner != p.owner) continue;
         const BuildingDef& bd = b.def();
-        if (bd.domain == domain) cap += bd.unitSlotBonus;
+        // Structure tables quote hulls; orbital room is held as population.
+        if (bd.domain == domain) {
+            cap += domain == Domain::Space ? bd.unitSlotBonus * kOrbitPopPerSlot : bd.unitSlotBonus;
+        }
     }
     // The surface has room for ten divisions, no matter how much barracks
     // space is built.
@@ -530,6 +544,8 @@ OrderResult GameState::canQueueUnit(Id planet, Id unitDefId, Faction f) const {
     }
     if (usedUnitSlots(planet, f, u.domain()) + u.popCost > unitSlotCapacity(planet, u.domain()))
         return OrderResult::fail("No free unit slots");
+    if (queuedInDomain(planet, u.domain()) >= kQueuePerDomain)
+        return OrderResult::fail("Build queue is full");
     if (u.isHero) {
         for (const UnitInstance& inst : units_) {
             if (inst.alive && inst.defId == unitDefId) return OrderResult::fail("Already in the field");
@@ -570,6 +586,8 @@ OrderResult GameState::canQueueBuilding(Id planet, Id buildingDefId, Faction f) 
                 return OrderResult::fail("Already in the queue");
         }
     }
+    if (queuedInDomain(planet, b.domain) >= kQueuePerDomain)
+        return OrderResult::fail("Build queue is full");
     if (faction(f).credits < buildingCost(planet, buildingDefId))
         return OrderResult::fail("Not enough credits");
     return OrderResult::success();

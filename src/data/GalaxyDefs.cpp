@@ -17,9 +17,12 @@ struct P {
         d.pos = Vec2(x, y);
     }
 
-    /// spaceUnits / groundUnits / spaceStructures / groundStructures
+    /// spaceUnits / groundUnits / spaceStructures / groundStructures.
+    /// Orbital room is quoted in hulls and stored as population: a Star
+    /// Destroyer alone is worth twenty-one, so the figure written here is
+    /// multiplied up to leave room for a real fleet.
     P& slots(int su, int gu, int sb, int gb) {
-        d.spaceUnitSlots = su;
+        d.spaceUnitSlots = su * kOrbitPopPerSlot;
         d.groundUnitSlots = gu;
         d.spaceBuildSlots = sb;
         d.groundBuildSlots = gb;

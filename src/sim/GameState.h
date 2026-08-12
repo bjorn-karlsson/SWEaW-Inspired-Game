@@ -188,6 +188,9 @@ public:
     std::vector<Id> allUnitsAt(Id planet, Faction owner) const;
     int usedUnitSlots(Id planet, Faction owner, Domain domain) const;
     int unitSlotCapacity(Id planet, Domain domain) const;
+    /// Orders already waiting in this world's queue for one domain. The yard
+    /// can only work on so many hulls at once.
+    int queuedInDomain(Id planet, Domain domain) const;
     int usedBuildSlots(Id planet, Domain domain) const;
     int buildSlotCapacity(Id planet, Domain domain) const;
     bool hasProductionTier(Id planet, Faction owner, Domain domain, int tier) const;
@@ -331,6 +334,9 @@ constexpr float kSecondsPerDay = 6.0f;
 /// Orbital holding slots per planet, and how many divisions fit on a surface.
 constexpr int kOrbitSlots = 3;
 constexpr int kGroundSlotCapacity = 10;
+/// How many orders one world may have waiting per domain, orbital and surface
+/// counted separately.
+constexpr int kQueuePerDomain = 5;
 
 float speedMultiplier(GameSpeed s);
 

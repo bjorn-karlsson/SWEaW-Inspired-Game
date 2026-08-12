@@ -23,6 +23,8 @@ struct AppOptions {
     bool demoWorld = false;   ///< Open the world view straight away (screenshots).
     bool demoDesigner = false;///< Open the unit designer straight away (screenshots).
     std::string designerUnit; ///< Unit key the designer should open on.
+    int designerMount = -1;   ///< Dev aid: pre-select this mount in the designer.
+    float designerScroll = 0.0f;  ///< Dev aid: scroll the property sheet down.
     int mouseX = -1;          ///< Dev aid: park the pointer here at start-up.
     int mouseY = -1;
     int windowW = 1600;       ///< Requested window size (clamped to the display).
@@ -91,17 +93,28 @@ private:
     void drawCommandBar();
     void drawMinimap(const Rect& area);
     void drawCategoryGrid(const Rect& area);
-    void drawStatusLine(const Rect& area);
+    /// Week, payday bar, net income and treasury, over the minimap.
+    void drawTimeReadout(const Rect& area);
+    /// Five orbital berths on the left, five surface berths on the right, and
+    /// the research readout between them.
+    void drawBuildQueue(const Rect& area);
     void drawTray(const Rect& area);
-    void drawActionCluster(const Rect& area);
     void drawHeroRoster();
     void drawPausedBanner();
     void drawBattlePrompt();
     void drawPlanetTooltip();
-    /// Compact fleet and army badges over every world that holds forces: the
-    /// three orbital slots collapse into one stack on the star map, and the
-    /// ten surface cells into one. Both are drag handles.
+    /// Round Empire at War style tokens over every world that holds forces:
+    /// one per orbital slot and one for the army on the ground. All of them
+    /// are drag handles.
     void drawForceBadges();
+    /// Total population of a stack, and the priciest hull in it, which is the
+    /// one whose silhouette stands for the whole stack on the map.
+    int stackPopulation(const std::vector<Id>& units) const;
+    Id stackFlagship(const std::vector<Id>& units) const;
+    /// "3x Venator-class Star Destroyer (63 POP)" lines for a hover list.
+    std::vector<std::string> stackManifest(const std::vector<Id>& units) const;
+    /// One round Empire at War style token, piled deeper the bigger the stack.
+    void drawStackToken(const Rect& box, const std::vector<Id>& units, Faction owner, bool hot);
     /// Registers a world as somewhere a dragged stack can be sent.
     void addMoveTarget(const Rect& r, Id planet);
     /// Starts dragging a whole stack of units.
@@ -227,6 +240,25 @@ private:
     std::string designEdit_;     ///< Text buffer for the focused number field.
     std::string designMessage_;
     Screen designReturn_ = Screen::Menu;
+    int designPart_ = -1;        ///< Selected piece of a hand-built model.
+
+    /// Dropdown plumbing. A list is drawn last, on top of everything, so the
+    /// choice it collects lands one frame later - which is why the pick is
+    /// parked here and applied by the field itself next time round.
+    int designDropdown_ = -1;    ///< Id of the open list, -1 for none.
+    struct OpenList {
+        int id = -1;
+        Rect anchor;
+        std::vector<std::string> names;
+        int current = 0;
+        bool fresh = false;  ///< Opened by the very click being processed.
+    };
+    OpenList designList_;
+    struct PendingPick {
+        int id = -1;
+        int value = 0;
+    };
+    PendingPick designPending_;
 };
 
 }  // namespace ui

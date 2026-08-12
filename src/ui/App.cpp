@@ -36,6 +36,10 @@ int App::run(const AppOptions& options) {
             Id id = db().unitId(options.designerUnit);
             if (id != kInvalid) designUnit_ = id;
         }
+        designHardpoint_ = options.designerMount;
+        designPropScroll_ = options.designerScroll;
+        designHardpoint_ = options.designerMount;
+        designPropScroll_ = options.designerScroll;
         openDesigner();
     }
     if (options.demoBattle || options.demoSummary) startDemoBattle();

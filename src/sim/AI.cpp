@@ -156,8 +156,9 @@ void AiController::militaryPhase(GameState& gs) {
                 }
                 float value = power / static_cast<float>(std::max(1, cost));
                 // Slight preference for bigger hulls so fleets do not become
-                // an endless swarm of corvettes.
-                value *= 1.0f + 0.10f * static_cast<float>(ud.popCost);
+                // an endless swarm of corvettes. Population runs from 1 to 21,
+                // so it is damped to keep the bonus a nudge, not a mandate.
+                value *= 1.0f + 0.02f * static_cast<float>(ud.popCost);
                 if (value > bestValue) {
                     bestValue = value;
                     best = uid;

@@ -100,7 +100,24 @@ static void testUnitModsRoundTrip() {
     extra.name = "Test Battery";
     extra.type = HardpointType::IonCannon;
     extra.damage = 12.0f;
+    extra.projectile = ProjectileKind::Flak;
+    extra.barrels = 4;
+    extra.reload = 1.25f;
+    extra.tracking = 0.75f;
+    extra.useOwnColour = true;
+    extra.colour[0] = 11;
+    extra.colour[1] = 22;
+    extra.colour[2] = 33;
     d.unitMutable(venator).hardpoints.push_back(extra);
+
+    // A hand-built model, which is stored as a list of primitives.
+    HullPart part;
+    part.shape = PartShape::Trapezoid;
+    part.tint = PartTint::Accent;
+    part.x = 0.25f;
+    part.h = 0.4f;
+    part.mirrored = true;
+    d.unitMutable(venator).look.parts.push_back(part);
 
     const std::string path = "unitmods_test.txt";
     int written = unitmods::save(d, path);
@@ -115,6 +132,19 @@ static void testUnitModsRoundTrip() {
     CHECK(!d.unit(venator).hardpoints.empty() &&
               d.unit(venator).hardpoints.back().type == HardpointType::IonCannon,
           "hardpoint type survives");
+    {
+        const Hardpoint& back = d.unit(venator).hardpoints.back();
+        CHECK(back.projectile == ProjectileKind::Flak, "ammunition survives");
+        CHECK(back.barrels == 4 && std::abs(back.reload - 1.25f) < 0.001f, "salvo survives");
+        CHECK(back.useOwnColour && back.colour[1] == 22, "bolt colour survives");
+        CHECK(back.name == "Test Battery", "mount name survives");
+    }
+    CHECK(d.unit(venator).look.parts.size() == 1, "the model survives");
+    if (!d.unit(venator).look.parts.empty()) {
+        const HullPart& p0 = d.unit(venator).look.parts.front();
+        CHECK(p0.shape == PartShape::Trapezoid && p0.tint == PartTint::Accent && p0.mirrored,
+              "model part keeps its shape, colour and mirroring");
+    }
 
     // A key the database has never seen creates a brand new unit.
     {
@@ -135,6 +165,7 @@ static void testUnitModsRoundTrip() {
     std::remove(path.c_str());
     d.unitMutable(venator).cost = originalCost;
     d.unitMutable(venator).hardpoints.pop_back();
+    d.unitMutable(venator).look.parts.clear();
     d.unitMutable(venator).custom = false;
 }
 

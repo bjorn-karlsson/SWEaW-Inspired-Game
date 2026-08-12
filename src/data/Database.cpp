@@ -139,6 +139,29 @@ const char* hullShapeName(HullShape s) {
     }
 }
 
+const char* projectileKindName(ProjectileKind k) {
+    switch (k) {
+        case ProjectileKind::Bolt: return "Energy Bolt";
+        case ProjectileKind::Beam: return "Beam Lance";
+        case ProjectileKind::Slug: return "Mass Driver";
+        case ProjectileKind::Missile: return "Guided Missile";
+        case ProjectileKind::IonPulse: return "Ion Pulse";
+        case ProjectileKind::Flak: return "Flak Burst";
+        default: return "?";
+    }
+}
+
+const char* partShapeName(PartShape s) {
+    switch (s) {
+        case PartShape::Rect: return "Plate";
+        case PartShape::Triangle: return "Prow";
+        case PartShape::Circle: return "Dome";
+        case PartShape::Ring: return "Ring";
+        case PartShape::Trapezoid: return "Taper";
+        default: return "?";
+    }
+}
+
 float UnitDef::antiCapital() const {
     float total = damageAntiCapital;
     for (const Hardpoint& h : hardpoints) total += h.damage * hardpointAntiCapital(h.type);

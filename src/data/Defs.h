@@ -71,6 +71,22 @@ const char* hardpointTypeName(HardpointType t);
 float hardpointAntiCapital(HardpointType t);
 float hardpointAntiFighter(HardpointType t);
 
+/// What a mount actually spits out. Cosmetic in the campaign, but it drives
+/// how the shot is drawn in a tactical battle and how fast the mount cycles.
+enum class ProjectileKind : int {
+    Bolt = 0,   ///< Short energy bolt: the standard turbolaser round.
+    Beam,       ///< Continuous lance.
+    Slug,       ///< Mass driver / concussion round.
+    Missile,    ///< Guided, slow, heavy.
+    IonPulse,   ///< Blue ion burst; strips shields first.
+    Flak,       ///< Bursting cloud, only good against squadrons.
+    Count
+};
+
+const char* projectileKindName(ProjectileKind k);
+
+/// One mount on a hull: a turret, a launcher, a generator, an engine or a
+/// hangar bay. Everything here is editable in the designer.
 struct Hardpoint {
     std::string name = "Turbolaser Battery";
     HardpointType type = HardpointType::Turbolaser;
@@ -80,6 +96,21 @@ struct Hardpoint {
     /// Position on the hull, -1..1 along its length and across its beam.
     float offsetX = 0.0f;
     float offsetY = 0.0f;
+
+    // --- the gun itself ---
+    ProjectileKind projectile = ProjectileKind::Bolt;
+    int barrels = 1;              ///< Shots loosed per salvo.
+    float reload = 2.5f;          ///< Seconds between salvoes.
+    float projectileSpeed = 700.0f;  ///< Pixels per second in a battle.
+    float tracking = 0.0f;        ///< 0 = cannot lead a squadron, 1 = perfect.
+    bool useOwnColour = false;    ///< Otherwise the bolt takes the faction colour.
+    int colour[3] = {255, 150, 90};
+
+    /// Damage per second this mount sustains, which is what the salvo really
+    /// means once the reload is taken into account.
+    float sustained() const {
+        return reload > 0.01f ? damage * static_cast<float>(barrels) / reload : damage;
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -102,6 +133,35 @@ enum class HullShape : int {
 
 const char* hullShapeName(HullShape s);
 
+/// Primitives a hand-built hull is assembled from. A unit whose appearance
+/// carries any parts is drawn from those instead of the preset silhouette,
+/// which is how the designer builds a model of its own.
+enum class PartShape : int {
+    Rect = 0,
+    Triangle,     ///< Points forward along the hull.
+    Circle,
+    Ring,
+    Trapezoid,    ///< Rect with a narrowed bow.
+    Count
+};
+
+const char* partShapeName(PartShape s);
+
+/// Which of the unit's three colours a part is painted in.
+enum class PartTint : int { Primary = 0, Secondary, Accent, Count };
+
+struct HullPart {
+    PartShape shape = PartShape::Rect;
+    PartTint tint = PartTint::Primary;
+    /// Centre and size in hull space: x runs -1 (stern) to 1 (bow), y runs
+    /// -1 (port) to 1 (starboard), and w/h are fractions of the same axes.
+    float x = 0.0f;
+    float y = 0.0f;
+    float w = 0.6f;
+    float h = 0.4f;
+    bool mirrored = false;  ///< Also draw the part flipped across the spine.
+};
+
 struct UnitAppearance {
     HullShape shape = HullShape::Wedge;
     float length = 1.0f;   ///< Size multiplier along the hull.
@@ -111,6 +171,9 @@ struct UnitAppearance {
     int primary[3] = {170, 190, 210};
     int secondary[3] = {90, 110, 140};
     int accent[3] = {230, 170, 90};
+    /// A model built in the designer. Empty means "use `shape`".
+    std::vector<HullPart> parts;
+    bool custom() const { return !parts.empty(); }
 };
 
 /// A wing of squadrons carried by a capital ship / carrier and launched during
@@ -226,6 +289,11 @@ struct TechDef {
 // ---------------------------------------------------------------------------
 // Planets and lanes
 // ---------------------------------------------------------------------------
+/// Orbital capacity is quoted in "hulls" in the planet tables and stored as
+/// population, so one written slot is worth this much. A Star Destroyer costs
+/// twenty-one population, a squadron two.
+constexpr int kOrbitPopPerSlot = 8;
+
 struct PlanetDef {
     Id id = kInvalid;
     std::string key;
@@ -235,7 +303,7 @@ struct PlanetDef {
 
     bool spaceOnly = false;  ///< No surface: captured by taking orbit.
 
-    int spaceUnitSlots = 8;
+    int spaceUnitSlots = 8;   ///< Orbital population capacity (see kOrbitPopPerSlot).
     int groundUnitSlots = 6;
     int spaceBuildSlots = 2;
     int groundBuildSlots = 3;

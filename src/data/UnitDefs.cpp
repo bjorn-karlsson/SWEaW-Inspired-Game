@@ -614,6 +614,19 @@ void registerUnits(Database& d) {
         }
         // Running costs: roughly a hundredth of the purchase price a week.
         u.upkeep = std::max(u.isHero ? 0 : 1, u.cost / 100);
+
+        // Population. A division is a division, but in orbit the size of the
+        // hull is what fills a system up: a Star Destroyer is worth a whole
+        // squadron wing of small craft.
+        switch (u.unitClass) {
+            case UnitClass::Capital: u.popCost = 21; break;
+            case UnitClass::Cruiser: u.popCost = 12; break;
+            case UnitClass::Frigate: u.popCost = 8; break;
+            case UnitClass::Corvette: u.popCost = 4; break;
+            case UnitClass::Fighter: u.popCost = 2; break;
+            case UnitClass::Bomber: u.popCost = 2; break;
+            default: u.popCost = 1; break;  // Everything on the ground.
+        }
     }
 
     // A few hulls that are famously not wedges.

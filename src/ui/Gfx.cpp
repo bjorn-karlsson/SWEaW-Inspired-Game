@@ -329,6 +329,78 @@ bool toggleButton(Gfx& g, const Input& in, const Rect& r, const std::string& lab
     return button(g, in, r, label, enabled, s);
 }
 
+bool dropdownBox(Gfx& g, const Input& in, const Rect& r, const std::string& value, bool open,
+                 int scale) {
+    bool hover = r.contains(static_cast<float>(in.mouseX), static_cast<float>(in.mouseY));
+    if (hover) g.requestCursor(CursorKind::Hand);
+    g.rect(r, open ? Color(30, 46, 62) : (hover ? Color(24, 34, 46) : Color(16, 22, 30)));
+    g.rectOutline(r, open || hover ? pal::kAccent : pal::kBorder);
+
+    float room = r.w - 22.0f;
+    int s = std::max(1, scale);
+    while (s > 1 && static_cast<float>(Gfx::textWidth(value, s)) > room) --s;
+    std::string shown = value;
+    const int charW = 6 * s;
+    if (static_cast<float>(Gfx::textWidth(shown, s)) > room && charW > 0) {
+        size_t fits = static_cast<size_t>(std::max(1.0f, room / static_cast<float>(charW)));
+        if (shown.size() > fits) shown = shown.substr(0, fits);
+    }
+    g.text(r.x + 6.0f, r.y + (r.h - static_cast<float>(Gfx::textHeight(s))) * 0.5f, shown, pal::kText, s);
+
+    // The chevron, pointing the way the list will go.
+    float cx = r.right() - 11.0f;
+    float cy = r.y + r.h * 0.5f;
+    float d = 4.0f;
+    if (open) {
+        g.triangle(Vec2(cx, cy - d), Vec2(cx - d, cy + d * 0.6f), Vec2(cx + d, cy + d * 0.6f),
+                   pal::kAccent);
+    } else {
+        g.triangle(Vec2(cx, cy + d), Vec2(cx - d, cy - d * 0.6f), Vec2(cx + d, cy - d * 0.6f),
+                   pal::kTextDim);
+    }
+    return hover && in.mouseClicked;
+}
+
+int dropdownList(Gfx& g, const Input& in, const Rect& anchor, const char* const* names, int count,
+                 int current, int scale) {
+    const float rowH = anchor.h;
+    // A long list shows a window around the current choice rather than running
+    // off the bottom of the screen.
+    int visible = std::max(1, static_cast<int>(static_cast<float>(g.height()) * 0.7f / rowH));
+    visible = std::min(visible, count);
+    int first = 0;
+    if (count > visible) {
+        first = std::max(0, std::min(current - visible / 2, count - visible));
+    }
+    float listH = rowH * static_cast<float>(visible) + 4.0f;
+    Rect list{anchor.x, anchor.bottom() + 2.0f, anchor.w, listH};
+    // Flip above the anchor when there is no room below it.
+    if (list.bottom() > static_cast<float>(g.height())) {
+        list.y = std::max(2.0f, anchor.y - listH - 2.0f);
+    }
+    g.rect(list, Color(12, 18, 26, 250));
+    g.rectOutline(list, pal::kAccent);
+
+    int picked = -2;
+    for (int n = 0; n < visible; ++n) {
+        int i = first + n;
+        Rect row{list.x + 2.0f, list.y + 2.0f + static_cast<float>(n) * rowH, list.w - 4.0f, rowH};
+        bool hover = row.contains(static_cast<float>(in.mouseX), static_cast<float>(in.mouseY));
+        if (hover) g.requestCursor(CursorKind::Hand);
+        if (i == current) g.rect(row, Color(30, 52, 70));
+        if (hover) g.rect(row, Color(44, 74, 96));
+        g.text(row.x + 6.0f, row.y + (row.h - static_cast<float>(Gfx::textHeight(scale))) * 0.5f,
+               names[i], i == current ? pal::kText : pal::kTextDim, scale);
+        if (hover && in.mouseClicked) picked = i;
+    }
+    // A click anywhere else closes the list without changing anything.
+    if (picked == -2 && in.mouseClicked &&
+        !list.contains(static_cast<float>(in.mouseX), static_cast<float>(in.mouseY))) {
+        picked = -1;
+    }
+    return picked;
+}
+
 void progressBar(Gfx& g, const Rect& r, float fraction, Color fill, Color background) {
     fraction = std::max(0.0f, std::min(1.0f, fraction));
     g.rect(r, background);

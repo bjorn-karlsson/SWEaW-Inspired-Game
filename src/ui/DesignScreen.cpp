@@ -31,6 +31,17 @@ const char* kShapeNames[] = {"Wedge", "Dagger", "Hammerhead", "Sphere", "Ring",
 const char* kHardpointNames[] = {"Turbolaser", "Ion Cannon",       "Missile Launcher", "Laser Cannon",
                                  "Point Def.", "Shield Generator", "Engine",           "Hangar Bay"};
 const char* kYesNo[] = {"No", "Yes"};
+const char* kProjectileNames[] = {"Energy Bolt", "Beam Lance",  "Mass Driver",
+                                  "Guided Missile", "Ion Pulse", "Flak Burst"};
+const char* kPartShapeNames[] = {"Plate", "Prow", "Dome", "Ring", "Taper"};
+const char* kPartTintNames[] = {"Primary", "Secondary", "Accent"};
+
+/// Turns a C string table into the vector of names the dropdowns take.
+std::vector<std::string> nameList(const char* const* names, int count) {
+    std::vector<std::string> out;
+    for (int i = 0; i < count; ++i) out.push_back(names[i]);
+    return out;
+}
 
 std::string credits(int value) {
     std::string s = std::to_string(std::abs(value));
@@ -42,6 +53,8 @@ std::string credits(int value) {
 
 // Shared with the rest of the UI.
 void drawUnitGlyphShared(Gfx& g, const Rect& r, UnitClass c, Color col);
+void drawEnginesAndMounts(Gfx& g, const UnitDef& u, float cx, float cy, float len, float beam,
+                          bool showHardpoints, int selectedHardpoint, float uiScale);
 
 /// Half-length and half-beam a hull is drawn at inside `area`. Long hulls are
 /// sized by the width, fat ones by the height, so nothing ever spills out of
@@ -75,6 +88,50 @@ void drawHull(Gfx& g, const Rect& area, const UnitDef& u, Color factionColour, b
     float len = 0.0f;
     float beam = 0.0f;
     hullMetrics(area, a, len, beam);
+
+    // A hand-built model replaces the preset silhouette entirely.
+    if (a.custom()) {
+        for (const HullPart& part : a.parts) {
+            Color pc = part.tint == PartTint::Primary
+                           ? primary
+                           : (part.tint == PartTint::Secondary ? secondary : accent);
+            for (int pass = 0; pass < (part.mirrored ? 2 : 1); ++pass) {
+                float sign = pass == 0 ? 1.0f : -1.0f;
+                float px = cx + part.x * len;
+                float py = cy + part.y * beam * sign;
+                float pw = std::max(1.0f, part.w * len);
+                float ph = std::max(1.0f, part.h * beam);
+                switch (part.shape) {
+                    case PartShape::Triangle:
+                        g.triangle(Vec2(px + pw * 0.5f, py), Vec2(px - pw * 0.5f, py - ph * 0.5f),
+                                   Vec2(px - pw * 0.5f, py + ph * 0.5f), pc);
+                        break;
+                    case PartShape::Circle:
+                        g.circle(px, py, std::min(pw, ph) * 0.5f, pc);
+                        break;
+                    case PartShape::Ring:
+                        for (int i = 0; i < 4; ++i) {
+                            g.circleOutline(px, py, std::min(pw, ph) * 0.5f - static_cast<float>(i) * uiScale,
+                                            pc);
+                        }
+                        break;
+                    case PartShape::Trapezoid:
+                        g.triangle(Vec2(px + pw * 0.5f, py - ph * 0.22f),
+                                   Vec2(px + pw * 0.5f, py + ph * 0.22f),
+                                   Vec2(px - pw * 0.5f, py + ph * 0.5f), pc);
+                        g.triangle(Vec2(px + pw * 0.5f, py - ph * 0.22f),
+                                   Vec2(px - pw * 0.5f, py - ph * 0.5f),
+                                   Vec2(px - pw * 0.5f, py + ph * 0.5f), pc);
+                        break;
+                    default:
+                        g.rect(Rect{px - pw * 0.5f, py - ph * 0.5f, pw, ph}, pc);
+                        break;
+                }
+            }
+        }
+        drawEnginesAndMounts(g, u, cx, cy, len, beam, showHardpoints, selectedHardpoint, uiScale);
+        return;
+    }
 
     switch (a.shape) {
         case HullShape::Wedge:
@@ -149,7 +206,14 @@ void drawHull(Gfx& g, const Rect& area, const UnitDef& u, Color factionColour, b
             break;
     }
 
-    // Engines glow at the stern.
+    drawEnginesAndMounts(g, u, cx, cy, len, beam, showHardpoints, selectedHardpoint, uiScale);
+}
+
+/// Engine glow and weapon mounts, shared by the preset hulls and hand-built
+/// models so a mount sits in the same place whichever way the ship is drawn.
+void drawEnginesAndMounts(Gfx& g, const UnitDef& u, float cx, float cy, float len, float beam,
+                          bool showHardpoints, int selectedHardpoint, float uiScale) {
+    const UnitAppearance& a = u.look;
     for (int i = 0; i < a.engines; ++i) {
         float spread = a.engines > 1 ? (static_cast<float>(i) / static_cast<float>(a.engines - 1) - 0.5f)
                                      : 0.0f;
@@ -163,7 +227,7 @@ void drawHull(Gfx& g, const Rect& area, const UnitDef& u, Color factionColour, b
         float hx = cx + h.offsetX * len;
         float hy = cy + h.offsetY * beam;
         bool sel = static_cast<int>(i) == selectedHardpoint;
-        Color c = accent;
+        Color c(200, 200, 210);
         switch (h.type) {
             case HardpointType::Turbolaser: c = Color(255, 120, 90); break;
             case HardpointType::IonCannon: c = Color(120, 190, 255); break;
@@ -175,6 +239,8 @@ void drawHull(Gfx& g, const Rect& area, const UnitDef& u, Color factionColour, b
             case HardpointType::Hangar: c = Color(200, 200, 210); break;
             default: break;
         }
+        // A mount painted in the designer wears its own colour.
+        if (h.useOwnColour) c = Color(h.colour[0], h.colour[1], h.colour[2]);
         float r = std::max(2.0f, 4.0f * uiScale);
         g.circle(hx, hy, r, c);
         if (sel) g.circleOutline(hx, hy, r + 3.0f * uiScale, Color(255, 255, 255));
@@ -214,8 +280,13 @@ void App::drawDesigner() {
 
     // Focus id counter: every field asks for the next one.
     int fieldId = 0;
+    designList_.id = -1;
+    designList_.fresh = false;
     auto focused = [&](int id) { return designFocus_ == id; };
     auto claim = [&](const Rect& r, int id) {
+        // An open dropdown owns the click; the field underneath must not also
+        // grab the keyboard when the list is dismissed over it.
+        if (designDropdown_ >= 0) return;
         if (r.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY)) &&
             input_.mouseClicked) {
             designFocus_ = id;
@@ -355,18 +426,28 @@ void App::drawDesigner() {
     drawHull(gfx_, hull, u, fc, true, designHardpoint_, gfx_.uiScale());
     gfx_.text(hull.x + S(6), hull.y + S(4), "BATTLE VIEW - drag a mount to move it", pal::kTextDim, F(1));
 
-    // Dragging hardpoints around the hull.
-    if (designHardpoint_ >= 0 && designHardpoint_ < static_cast<int>(u.hardpoints.size()) &&
-        input_.mouseDown && hull.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY))) {
+    // Dragging whatever is selected - a mount or a piece of the model - around
+    // the hull. Selecting one clears the other, so a drag is never ambiguous.
+    if (input_.mouseDown &&
+        hull.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY))) {
         float cx = hull.x + hull.w * 0.5f;
         float cy = hull.y + hull.h * 0.5f;
         float len = 0.0f;
         float beam = 0.0f;
         hullMetrics(hull, u.look, len, beam);
-        Hardpoint& h = u.hardpoints[static_cast<size_t>(designHardpoint_)];
-        h.offsetX = std::max(-1.4f, std::min(1.4f, (static_cast<float>(input_.mouseX) - cx) / len));
-        h.offsetY = std::max(-1.6f, std::min(1.6f, (static_cast<float>(input_.mouseY) - cy) / beam));
-        u.custom = true;
+        float hx = (static_cast<float>(input_.mouseX) - cx) / std::max(1.0f, len);
+        float hy = (static_cast<float>(input_.mouseY) - cy) / std::max(1.0f, beam);
+        if (designHardpoint_ >= 0 && designHardpoint_ < static_cast<int>(u.hardpoints.size())) {
+            Hardpoint& h = u.hardpoints[static_cast<size_t>(designHardpoint_)];
+            h.offsetX = std::max(-1.4f, std::min(1.4f, hx));
+            h.offsetY = std::max(-1.6f, std::min(1.6f, hy));
+            u.custom = true;
+        } else if (designPart_ >= 0 && designPart_ < static_cast<int>(u.look.parts.size())) {
+            HullPart& part = u.look.parts[static_cast<size_t>(designPart_)];
+            part.x = std::max(-1.5f, std::min(1.5f, hx));
+            part.y = std::max(-1.5f, std::min(1.5f, hy));
+            u.custom = true;
+        }
     }
 
     // Map icons at the sizes the star map uses.
@@ -430,36 +511,19 @@ void App::drawDesigner() {
                   pal::kTextDim, F(1));
         gfx_.textRight(row.right() - S(6), row.y + S(4),
                        "HP " + std::to_string(static_cast<int>(h.health)), pal::kTextDim, F(1));
-        if (hover && input_.mouseClicked) designHardpoint_ = static_cast<int>(i);
+        if (hover && input_.mouseClicked) {
+            designHardpoint_ = static_cast<int>(i);
+            designPart_ = -1;
+        }
     }
 
-    // Editing the selected hardpoint.
-    if (designHardpoint_ >= 0 && designHardpoint_ < static_cast<int>(u.hardpoints.size())) {
-        Hardpoint& h = u.hardpoints[static_cast<size_t>(designHardpoint_)];
-        float ey = hpArea.bottom() - S(96);
-        auto hpRow = [&](const char* label, float& value, float step, float lo, float hi) {
-            gfx_.text(hpArea.x + S(8), ey + S(5), label, pal::kTextDim, F(1));
-            Rect field{hpArea.x + S(120), ey, S(180), S(22)};
-            int id = ++fieldId;
-            claim(field, id);
-            if (numberField(gfx_, input_, field, value, step, lo, hi, focused(id), designEdit_, F(1))) {
-                u.custom = true;
-            }
-            ey += S(24);
-        };
-        int type = static_cast<int>(h.type);
-        gfx_.text(hpArea.x + S(8), ey + S(5), "TYPE", pal::kTextDim, F(1));
-        Rect typeField{hpArea.x + S(120), ey, S(180), S(22)};
-        if (enumField(gfx_, input_, typeField, type, kHardpointNames,
-                      static_cast<int>(HardpointType::Count), F(1))) {
-            h.type = static_cast<HardpointType>(type);
-            h.name = hardpointTypeName(h.type);
-            u.custom = true;
-        }
-        ey += S(24);
-        hpRow("DAMAGE", h.damage, 5.0f, 0.0f, 500.0f);
-        hpRow("RANGE", h.range, 10.0f, 0.0f, 1000.0f);
-        hpRow("MOUNT HP", h.health, 25.0f, 0.0f, 5000.0f);
+    if (u.hardpoints.empty()) {
+        gfx_.text(hpArea.x + S(8), hpArea.y + S(34),
+                  "NO MOUNTS. PRESS ADD, THEN EDIT THE MOUNT ON THE RIGHT.", pal::kTextDim, F(1));
+    } else {
+        gfx_.text(hpArea.x + S(8), hpArea.bottom() - S(16),
+                  "SELECT A MOUNT TO EDIT IT ON THE RIGHT; DRAG IT IN THE PREVIEW TO PLACE IT",
+                  pal::kTextDim, F(1));
     }
 
     // ------------------------------------------------------------------
@@ -506,11 +570,38 @@ void App::drawDesigner() {
         numRow(label, v, static_cast<float>(step), static_cast<float>(lo), static_cast<float>(hi));
         value = static_cast<int>(std::lround(v));
     };
-    auto enumRow = [&](const char* label, int& value, const char* const* names, int count) {
+    // A dropdown row. The list itself is painted at the very end of the frame,
+    // over everything else, so what it collects is applied here next frame.
+    auto listRow = [&](const char* label, int& value, const std::vector<std::string>& names) {
         gfx_.text(props.x + S(12), py + S(5), label, pal::kTextDim, F(1));
         Rect field{props.x + labelW, py, fieldW, S(22)};
-        if (enumField(gfx_, input_, field, value, names, count, F(1))) u.custom = true;
+        int id = ++fieldId;
+        if (designPending_.id == id) {
+            value = designPending_.value;
+            designPending_.id = -1;
+            u.custom = true;
+        }
+        int shown = names.empty() ? 0 : std::max(0, std::min(static_cast<int>(names.size()) - 1, value));
+        bool open = designDropdown_ == id;
+        bool fresh = false;
+        if (dropdownBox(gfx_, input_, field, names.empty() ? std::string("-") : names[static_cast<size_t>(shown)],
+                        open, F(1))) {
+            designDropdown_ = open ? -1 : id;
+            open = !open;
+            fresh = open;
+        }
+        if (open) {
+            designList_.id = id;
+            designList_.anchor = field;
+            designList_.names = names;
+            designList_.current = shown;
+            // The click that opened the list must not also close it.
+            designList_.fresh = fresh;
+        }
         py += S(26);
+    };
+    auto enumRow = [&](const char* label, int& value, const char* const* names, int count) {
+        listRow(label, value, nameList(names, count));
     };
 
     section("IDENTITY");
@@ -543,13 +634,12 @@ void App::drawDesigner() {
         for (size_t i = 0; i < techs.size(); ++i) {
             if (techs[i] == u.requiredTech) idx = static_cast<int>(i) + 1;
         }
-        gfx_.text(props.x + S(12), py + S(5), "REQUIRES TECH", pal::kTextDim, F(1));
-        Rect field{props.x + labelW, py, fieldW, S(22)};
-        if (enumField(gfx_, input_, field, idx, ptrs.data(), static_cast<int>(ptrs.size()), F(1))) {
+        (void)ptrs;
+        int before = idx;
+        listRow("REQUIRES TECH", idx, names);
+        if (idx != before) {
             u.requiredTech = idx == 0 ? kInvalid : techs[static_cast<size_t>(idx - 1)];
-            u.custom = true;
         }
-        py += S(26);
     }
 
     section("COMBAT");
@@ -605,6 +695,156 @@ void App::drawDesigner() {
     colourRow("PRIMARY", u.look.primary);
     colourRow("SECONDARY", u.look.secondary);
     colourRow("ACCENT", u.look.accent);
+
+    // ------------------------------------------------------------------
+    // MODEL: build a hull out of primitives instead of picking a preset
+    // ------------------------------------------------------------------
+    section("MODEL");
+    {
+        gfx_.text(props.x + S(12), py + S(4),
+                  u.look.custom() ? "CUSTOM  (" + std::to_string(u.look.parts.size()) + " PARTS)"
+                                  : "PRESET SILHOUETTE",
+                  u.look.custom() ? pal::kAccent : pal::kTextDim, F(1));
+        py += S(20);
+
+        float bw2 = (fieldW + labelW - props.x - S(12) + props.x) * 0.0f;  // keep the formula obvious
+        (void)bw2;
+        float bwid = (props.w - S(28)) / 4.0f;
+        Rect addPart{props.x + S(12), py, bwid - S(4), S(22)};
+        Rect dupPart{addPart.right() + S(4), py, bwid - S(4), S(22)};
+        Rect delPart{dupPart.right() + S(4), py, bwid - S(4), S(22)};
+        Rect clrPart{delPart.right() + S(4), py, bwid - S(4), S(22)};
+        bool havePart = designPart_ >= 0 && designPart_ < static_cast<int>(u.look.parts.size());
+        if (button(gfx_, input_, addPart, "ADD", true, ls)) {
+            HullPart part;
+            // A new plate lands amidships, big enough to grab straight away.
+            part.x = 0.0f;
+            part.y = 0.0f;
+            part.w = 0.7f;
+            part.h = 0.5f;
+            u.look.parts.push_back(part);
+            designPart_ = static_cast<int>(u.look.parts.size()) - 1;
+            designHardpoint_ = -1;
+            u.custom = true;
+        }
+        if (button(gfx_, input_, dupPart, "COPY", havePart, ls)) {
+            u.look.parts.push_back(u.look.parts[static_cast<size_t>(designPart_)]);
+            u.look.parts.back().y += 0.25f;
+            designPart_ = static_cast<int>(u.look.parts.size()) - 1;
+            u.custom = true;
+        }
+        if (button(gfx_, input_, delPart, "DELETE", havePart, ls)) {
+            u.look.parts.erase(u.look.parts.begin() + designPart_);
+            designPart_ = -1;
+            u.custom = true;
+        }
+        if (button(gfx_, input_, clrPart, "CLEAR", u.look.custom(), ls)) {
+            u.look.parts.clear();
+            designPart_ = -1;
+            u.custom = true;
+        }
+        py += S(28);
+
+        // The part list.
+        for (size_t i = 0; i < u.look.parts.size(); ++i) {
+            const HullPart& part = u.look.parts[i];
+            Rect row{props.x + S(12), py, props.w - S(24), S(20)};
+            bool sel = static_cast<int>(i) == designPart_;
+            bool hover = row.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY));
+            gfx_.rect(row, sel ? Color(40, 62, 88, 240)
+                               : (hover ? Color(28, 40, 54, 220) : Color(16, 22, 32, 200)));
+            gfx_.text(row.x + S(6), row.y + S(4),
+                      std::to_string(i + 1) + "  " + partShapeName(part.shape) + "  " +
+                          (part.mirrored ? "(MIRRORED)" : ""),
+                      pal::kText, F(1));
+            if (hover && input_.mouseClicked) {
+                designPart_ = static_cast<int>(i);
+                designHardpoint_ = -1;
+            }
+            py += S(22);
+        }
+
+        if (designPart_ >= 0 && designPart_ < static_cast<int>(u.look.parts.size())) {
+            HullPart& part = u.look.parts[static_cast<size_t>(designPart_)];
+            int shape = static_cast<int>(part.shape);
+            listRow("PART SHAPE", shape, nameList(kPartShapeNames, static_cast<int>(PartShape::Count)));
+            part.shape = static_cast<PartShape>(
+                std::max(0, std::min(static_cast<int>(PartShape::Count) - 1, shape)));
+            int tint = static_cast<int>(part.tint);
+            listRow("PART COLOUR", tint, nameList(kPartTintNames, static_cast<int>(PartTint::Count)));
+            part.tint = static_cast<PartTint>(
+                std::max(0, std::min(static_cast<int>(PartTint::Count) - 1, tint)));
+            numRow("PART X", part.x, 0.05f, -1.5f, 1.5f);
+            numRow("PART Y", part.y, 0.05f, -1.5f, 1.5f);
+            numRow("PART LENGTH", part.w, 0.05f, 0.02f, 2.0f);
+            numRow("PART WIDTH", part.h, 0.05f, 0.02f, 2.0f);
+            int mirrored = part.mirrored ? 1 : 0;
+            listRow("MIRRORED", mirrored, nameList(kYesNo, 2));
+            part.mirrored = mirrored != 0;
+            gfx_.text(props.x + S(12), py, "Drag the part in the preview to place it", pal::kTextDim,
+                      F(1));
+            py += S(20);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // The selected mount, in full
+    // ------------------------------------------------------------------
+    if (designHardpoint_ >= 0 && designHardpoint_ < static_cast<int>(u.hardpoints.size())) {
+        Hardpoint& h = u.hardpoints[static_cast<size_t>(designHardpoint_)];
+        section("SELECTED MOUNT");
+        textRow("MOUNT NAME", h.name);
+        int type = static_cast<int>(h.type);
+        int typeBefore = type;
+        listRow("MOUNT TYPE", type, nameList(kHardpointNames, static_cast<int>(HardpointType::Count)));
+        if (type != typeBefore) {
+            h.type = static_cast<HardpointType>(
+                std::max(0, std::min(static_cast<int>(HardpointType::Count) - 1, type)));
+            if (h.name.empty() || h.name == hardpointTypeName(static_cast<HardpointType>(typeBefore))) {
+                h.name = hardpointTypeName(h.type);
+            }
+        }
+
+        // What the numbers mean depends on what the mount is.
+        switch (h.type) {
+            case HardpointType::ShieldGenerator:
+                numRow("SHIELD ADDED", h.health, 25.0f, 0.0f, 20000.0f);
+                numRow("COVERAGE RANGE", h.range, 10.0f, 0.0f, 2000.0f);
+                break;
+            case HardpointType::Engine:
+                numRow("SPEED ADDED", h.damage, 1.0f, 0.0f, 400.0f);
+                numRow("MOUNT HP", h.health, 25.0f, 0.0f, 5000.0f);
+                break;
+            case HardpointType::Hangar:
+                numRow("MOUNT HP", h.health, 25.0f, 0.0f, 5000.0f);
+                break;
+            default: {
+                numRow("DAMAGE PER SHOT", h.damage, 5.0f, 0.0f, 1000.0f);
+                numRow("RANGE", h.range, 10.0f, 0.0f, 2000.0f);
+                numRow("MOUNT HP", h.health, 25.0f, 0.0f, 5000.0f);
+                int proj = static_cast<int>(h.projectile);
+                listRow("AMMUNITION", proj,
+                        nameList(kProjectileNames, static_cast<int>(ProjectileKind::Count)));
+                h.projectile = static_cast<ProjectileKind>(
+                    std::max(0, std::min(static_cast<int>(ProjectileKind::Count) - 1, proj)));
+                intRow("BARRELS", h.barrels, 1, 1, 12);
+                numRow("RELOAD (S)", h.reload, 0.25f, 0.1f, 30.0f);
+                numRow("SHOT SPEED", h.projectileSpeed, 50.0f, 50.0f, 4000.0f);
+                numRow("TRACKING", h.tracking, 0.05f, 0.0f, 1.0f);
+                int own = h.useOwnColour ? 1 : 0;
+                listRow("OWN BOLT COLOUR", own, nameList(kYesNo, 2));
+                h.useOwnColour = own != 0;
+                if (h.useOwnColour) colourRow("BOLT COLOUR", h.colour);
+                gfx_.text(props.x + S(12), py, "SUSTAINED DPS", pal::kTextDim, F(1));
+                gfx_.textRight(props.right() - S(12), py,
+                               std::to_string(static_cast<int>(h.sustained())), pal::kText, F(1));
+                py += S(20);
+                break;
+            }
+        }
+        numRow("MOUNT X", h.offsetX, 0.05f, -1.4f, 1.4f);
+        numRow("MOUNT Y", h.offsetY, 0.05f, -1.6f, 1.6f);
+    }
 
     section("CARRIED SQUADRONS");
     for (size_t i = 0; i < u.wings.size(); ++i) {
@@ -679,6 +919,21 @@ void App::drawDesigner() {
     py += S(26);
 
     gfx_.popClip();
+
+    // The open dropdown goes on last so it covers whatever is under it.
+    if (designList_.id >= 0 && !designList_.names.empty()) {
+        std::vector<const char*> ptrs;
+        for (const std::string& n : designList_.names) ptrs.push_back(n.c_str());
+        int picked = dropdownList(gfx_, input_, designList_.anchor, ptrs.data(),
+                                  static_cast<int>(ptrs.size()), designList_.current, F(1));
+        if (picked >= 0) {
+            designPending_.id = designList_.id;
+            designPending_.value = picked;
+            designDropdown_ = -1;
+        } else if (picked == -1 && !designList_.fresh) {
+            designDropdown_ = -1;
+        }
+    }
 
     // Clicking outside every field drops focus.
     if (input_.mouseClicked && designFocus_ > fieldId) designFocus_ = -1;

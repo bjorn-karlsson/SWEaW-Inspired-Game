@@ -55,20 +55,18 @@ HUD is a command console welded across the bottom, laid out like Empire at
 War's:
 
 * **far left** — help, holonet, world dossier and menu buttons
-* **left** — the galactic minimap (click or drag it to jump the camera) with
-  the pause and 1x/2x/4x speed controls beneath it
-* **centre** — the production readout for the selected world, the eight
-  category buttons (FLEET, ARMY, ORBIT, BASE, TECH, HEROES, WORLD, NEWS), and
-  the research readout
-* **status line** — selected world, its weekly income, orbit and surface slot
-  usage, faction standings, the week counter with its payday bar, weekly
-  income and your treasury
-* **tray** — the cards for whatever category is selected: buildable ships,
-  troops and structures with their cost and build time, the technology list,
-  hero recruitment, the world dossier with its clickable garrison, or the
-  holonet log
-* **right** — selection tools, WITHDRAW, and the big contextual
-  INVADE / DEPLOY button that lands the troops waiting in orbit
+* **left** — the week counter with its payday bar, your net weekly income and
+  your treasury, over the galactic minimap (click or drag it to jump the
+  camera), with the pause and 1x/2x/4x speed controls beneath
+* **middle** — the eight category buttons in two rows: FLEET, ARMY, ORBIT,
+  BASE / TECH, HEROES, WORLD, NEWS
+* **build queue** — five orbital berths on the left and five surface berths on
+  the right, one row of icons per world, with the research readout between
+  them. The berth at the head of each side shows how far along its order is;
+  click any of them to cancel that order
+* **build bar** — two rows of icon tiles under the queue: everything the
+  selected world can lay down in the chosen category, each with its price and,
+  for units, its population cost. Click a tile to order one
 
 Your commanders appear as portraits in the top right corner; click one to jump
 to the world it is on. When the game is paused a banner drops down from the top
@@ -87,23 +85,41 @@ garrison and a reserve apart from one another. The surface slot is the world
 itself and holds **ten divisions**, which is also the hard ceiling on ground
 production there.
 
-On the star map none of that machinery is on show. Each world wears at most two
-small badges, the way Empire at War does it: a **fleet badge** beside it — the
-three orbital slots read as one stack, marked with its heaviest ship and the
-number of units — and an **army badge** on the world itself for the troops
-holding the ground. One badge per faction present, so a contested system shows
-both sides at a glance. The expanded slots only appear once you dive into the
-world.
+On the star map that machinery is shown as round tokens, the way Empire at War
+does it. Above each world sit its three orbital slots, one token each, in the
+same left-to-right order you sort them into in the world view; on the world
+itself sits the army holding the ground. Another faction's ships read as a
+single token — how they organise their fleet is their business.
+
+A token carries no numbers. It shows the **silhouette of the most expensive
+hull in the stack** and nothing else, and how big the stack is shows in how
+many tokens are piled up behind the front one: one token up to twelve
+population, two up to twenty-four, then forty-eight, ninety-six, and five deep
+for anything larger. Hover a token for the full manifest — the stack's
+population and every hull in it, heaviest first.
 
 Everything moves by **drag and drop**, no selecting first:
 
-* drag a fleet badge onto another world — the stack sets off down the lanes
-* drag it onto the world's army badge — the troops land (a defended world
+* drag a fleet token onto another world — that stack sets off down the lanes
+* drag it onto the world's army token — the troops land (a defended world
   starts a ground battle, exactly as the INVADE button does)
 * inside the world view, drag between the three orbital slots and the ten
   surface cells to reorganise, land or re-embark
 
 Dragging a selected unit brings the rest of the selection with it.
+
+### Population
+
+Ground units are counted in divisions: one each, ten to a world. In orbit it is
+the size of the hull that fills a system up, so every ship carries a population
+cost — a squadron 2, a corvette 4, a frigate 8, a cruiser 12, a Star Destroyer
+21 — against a system's orbital capacity, which runs from a few dozen for a
+frontier world to nearly a hundred over a Core shipyard. Population is the
+quickest read on what a hull is worth: it is printed on the corner of every
+build tile and it is what the fleet tokens are stacked by.
+
+Each world will also only work on **five orbital orders and five surface
+orders** at a time. Anything more has to wait for a berth to clear.
 
 ### Diving into a world
 
@@ -121,9 +137,8 @@ whole roster opens up for editing. Nothing about a unit is baked into the
 binary: everything the game knows about it is on this screen.
 
 * **Identity** — name, faction, class, role, manufacturer, description
-* **Production** — price, weekly upkeep, build time, how many unit slots it
-  fills, which facility tier and which technology it needs before it can be
-  ordered
+* **Production** — price, weekly upkeep, build time, population cost, which
+  facility tier and which technology it needs before it can be ordered
 * **Combat** — hull, shields, shield regeneration, anti-capital and
   anti-squadron damage, weapon range, speed, accuracy, hero status and bonuses
 * **Appearance** — hull silhouette (wedge, dagger, hammerhead, sphere, ring,
@@ -131,13 +146,26 @@ binary: everything the game knows about it is on this screen.
   the faction colour or three colours of your own. The preview shows the ship
   as it is drawn in battle and as a map icon at the three sizes the star map
   uses, so you can see what you are doing
-* **Hardpoints** — the turrets. Add and remove mounts, set each one's type
-  (turbolaser, ion cannon, missile launcher, laser cannon, point defence,
-  shield generator, engine, hangar bay), its damage, range and hit points, and
-  **drag it around the hull** to position it. Weapons feed the unit's damage,
-  shield generators its shields, engines its speed, hangar bays its wings
+* **Model** — or build the hull yourself instead of picking a silhouette. Add
+  plates, prows, domes, rings and tapers, paint each one in the ship's primary,
+  secondary or accent colour, mirror it across the spine, size it, and drag it
+  into place in the preview. A unit with any parts is drawn from them
+  everywhere in the game; CLEAR puts it back on its preset
+* **Mounts** — the turrets, in full. Add and remove them, name them, set the
+  type (turbolaser, ion cannon, missile launcher, laser cannon, point defence,
+  shield generator, engine, hangar bay), and **drag each one around the hull**
+  to position it. A weapon mount also carries its ammunition (energy bolt, beam
+  lance, mass driver, guided missile, ion pulse, flak burst), how many barrels
+  fire per salvo, its reload, its shot speed, how well it tracks a squadron and
+  what colour its bolts are — with the sustained damage per second worked out
+  as you go. The fields follow the type: a shield generator asks how much
+  shielding it adds, an engine how much speed. Weapons feed the unit's damage,
+  generators its shields, engines its speed, hangar bays its wings
 * **Carried squadrons** — which fighter and bomber squadrons a carrier
   launches, and how many of each
+
+Anything with a fixed set of choices is a **dropdown**: click it and pick from
+the list.
 
 Every warship in the game already ships with its guns mounted — a Venator
 carries six turbolaser batteries, four point-defence clusters and three hangar
@@ -163,7 +191,7 @@ opens at a size that fits your desktop, can be resized freely, and **F11**
 | --- | --- |
 | Left click a world | select it |
 | Right click a world | send the selected units there |
-| Drag a fleet or army badge | send that stack to another world, or land it |
+| Drag a fleet or army token | send that stack to another world, or land it |
 | Drag a unit tile | move it between the orbital slots and the surface |
 | F2 | open the unit designer |
 | Middle mouse drag | pull the galaxy around |
@@ -184,7 +212,8 @@ button drags the camera.
 Useful switches: `--autostart`, `--campaign N`, `--faction N`, `--difficulty N`,
 `--fullscreen`, `--window W H`, and, for smoke testing and screenshots,
 `--demo-battle`, `--demo-summary`, `--demo-hud`, `--demo-world`,
-`--demo-designer`, `--designer-unit KEY`, `--mouse X Y` and
+`--demo-designer`, `--designer-unit KEY`, `--designer-mount N`,
+`--designer-scroll PX`, `--mouse X Y` and
 `--screenshot FILE.bmp` (renders a few frames, saves the image and exits).
 `--help` lists them all.
 
@@ -210,7 +239,7 @@ so they shape where the fighting happens.
 
 Every world has its own capacity, and they vary a great deal:
 
-* **space unit slots** and **ground unit slots** cap what you can produce there
+* **orbital population** and **ground divisions** cap what can sit there
 * **space build slots** and **ground build slots** cap the structures
 * a **base income** paid every week
 
