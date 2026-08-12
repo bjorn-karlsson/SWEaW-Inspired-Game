@@ -56,9 +56,15 @@ public:
     Id addCampaign(CampaignDef d);
     /// Attaches role and manufacturer flavour to an already registered unit.
     void setUnitFlavour(const std::string& key, const std::string& role, const std::string& maker);
+    /// Editable access, used by the in-game designer and the mod loader.
+    UnitDef& unitMutable(Id id) { return units_[static_cast<size_t>(id)]; }
+    /// Adds a unit at runtime (the designer's "new unit").
+    Id createUnit(const std::string& key, const UnitDef& from);
 
 private:
     Database();
+    friend Database& editableDb();
+    friend Database& mutableInstance();
     void build();
     void resolveReferences();
 
@@ -78,6 +84,9 @@ private:
 
 /// Convenience accessor.
 inline const Database& db() { return Database::get(); }
+/// The same database, editable. Only the designer and the mod loader use it.
+Database& editableDb();
+Database& mutableInstance();
 
 namespace content {
 // Implemented in the individual content files.

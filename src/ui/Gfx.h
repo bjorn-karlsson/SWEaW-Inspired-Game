@@ -65,6 +65,8 @@ struct Input {
     float dragDeltaY = 0.0f;
     bool shift = false;
     bool ctrl = false;
+    std::string typed;      ///< Characters entered this frame.
+    bool backspace = false; ///< Backspace was pressed this frame.
     int dragStartX = 0, dragStartY = 0;
     bool dragging = false;
     std::vector<SDL_Keycode> keysPressed;
@@ -151,6 +153,17 @@ bool button(Gfx& g, const Input& in, const Rect& r, const std::string& label, bo
 bool toggleButton(Gfx& g, const Input& in, const Rect& r, const std::string& label, bool active,
                   bool enabled = true);
 void progressBar(Gfx& g, const Rect& r, float fraction, Color fill, Color background);
+
+// --- editor widgets, used by the unit designer ---
+/// A focusable text box. `focused` is owned by the caller so it can keep one
+/// field active across frames; returns true when the value changed.
+bool textField(Gfx& g, const Input& in, const Rect& r, std::string& value, bool focused, int scale);
+/// Stepper with a typed value. Returns true when the value changed.
+bool numberField(Gfx& g, const Input& in, const Rect& r, float& value, float step, float lo, float hi,
+                 bool focused, std::string& editing, int scale);
+/// [<] name [>] cycler over a list of names.
+bool enumField(Gfx& g, const Input& in, const Rect& r, int& value, const char* const* names, int count,
+               int scale);
 /// Draws `text` wrapped to the width of `r`; returns the height used.
 float wrappedText(Gfx& g, const Rect& r, const std::string& s, Color c, int scale = 1);
 

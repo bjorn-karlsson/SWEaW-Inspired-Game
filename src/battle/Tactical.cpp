@@ -85,8 +85,8 @@ void Battle::spawnSide(const GameState& gs, const std::vector<Id>& unitIds, bool
         u.attackerSide = attackerSide;
         u.maxHull = d.hull;
         u.hull = d.hull * inst.health;
-        u.maxShield = d.shield;
-        u.shield = d.shield;
+        u.maxShield = d.totalShield();
+        u.shield = u.maxShield;
         u.radius = radiusFor(d.unitClass);
         u.squadron = d.isSquadron();
         u.pos = spawnPoint(attackerSide, slot, std::max(1, total));
@@ -135,8 +135,8 @@ void Battle::launchWings(const GameState& gs, int carrierIndex) {
             u.attackerSide = carrier.attackerSide;
             u.maxHull = wd.hull;
             u.hull = wd.hull;
-            u.maxShield = wd.shield;
-            u.shield = wd.shield;
+            u.maxShield = wd.totalShield();
+            u.shield = u.maxShield;
             u.radius = radiusFor(wd.unitClass);
             u.squadron = true;
             u.parent = carrierIndex;
@@ -168,7 +168,7 @@ void Battle::acquireTargets() {
         float best = 1e18f;
         Id bestIdx = kInvalid;
         const UnitDef* d = u.def();
-        bool antiFighter = d != nullptr && d->damageAntiFighter > d->damageAntiCapital;
+        bool antiFighter = d != nullptr && d->antiFighter() > d->antiCapital();
         for (const TUnit& other : units_) {
             if (!other.alive || other.escaped) continue;
             if (other.attackerSide == u.attackerSide && other.owner == u.owner) continue;
@@ -214,7 +214,7 @@ void Battle::fire(TUnit& u, TUnit& target, float dt) {
     float dmg = 0.0f;
     float reload = 1.0f;
     if (d != nullptr) {
-        dmg = target.squadron ? d->damageAntiFighter : d->damageAntiCapital;
+        dmg = target.squadron ? d->antiFighter() : d->antiCapital();
         reload = target.squadron ? 0.8f : 1.2f;
     } else if (u.structure) {
         const BuildingDef& bd = db().building(u.defId);
@@ -248,7 +248,7 @@ void Battle::stepUnit(TUnit& u, float dt) {
     if (u.cooldown > 0.0f) u.cooldown -= dt;
     if (u.structure) return;
 
-    float speed = d != nullptr ? d->speed : 30.0f;
+    float speed = d != nullptr ? d->totalSpeed() : 30.0f;
     float range = d != nullptr ? d->range : 150.0f;
 
     if (u.retreating) {

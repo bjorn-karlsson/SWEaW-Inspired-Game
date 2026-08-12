@@ -112,10 +112,10 @@ void addUnit(const GameState& gs, Side& side, Id instanceId, Domain domain) {
     Combatant c;
     c.instanceId = instanceId;
     c.defId = d.id;
-    c.maxHp = d.hull + d.shield;
+    c.maxHp = d.hull + d.totalShield();
     c.hp = c.maxHp * inst.health;
-    c.dmgAntiCapital = d.damageAntiCapital * d.accuracy;
-    c.dmgAntiFighter = d.damageAntiFighter * d.accuracy;
+    c.dmgAntiCapital = d.antiCapital() * d.accuracy;
+    c.dmgAntiFighter = d.antiFighter() * d.accuracy;
     c.squadron = d.isSquadron();
     side.bonus += d.heroCombatBonus;
     int parentIndex = static_cast<int>(side.units.size());
@@ -129,10 +129,10 @@ void addUnit(const GameState& gs, Side& side, Id instanceId, Domain domain) {
             for (int i = 0; i < w.count; ++i) {
                 Combatant s;
                 s.defId = wd.id;
-                s.maxHp = wd.hull + wd.shield;
+                s.maxHp = wd.hull + wd.totalShield();
                 s.hp = s.maxHp;
-                s.dmgAntiCapital = wd.damageAntiCapital * wd.accuracy;
-                s.dmgAntiFighter = wd.damageAntiFighter * wd.accuracy;
+                s.dmgAntiCapital = wd.antiCapital() * wd.accuracy;
+                s.dmgAntiFighter = wd.antiFighter() * wd.accuracy;
                 s.squadron = true;
                 s.parent = parentIndex;
                 side.units.push_back(s);

@@ -10,7 +10,7 @@
 namespace gc {
 namespace ui {
 
-enum class Screen { Menu, Galaxy, Battle, Summary, GameOver };
+enum class Screen { Menu, Galaxy, Battle, Summary, GameOver, Designer };
 
 /// Command line options. The screenshot and demo switches exist so the client
 /// can be smoke-tested without a human at the keyboard.
@@ -21,6 +21,8 @@ struct AppOptions {
     bool demoHud = false;     ///< Grant the player's heroes and pause, for HUD screenshots.
     bool fullscreen = false;  ///< Start full screen (F11 toggles it at any time).
     bool demoWorld = false;   ///< Open the world view straight away (screenshots).
+    bool demoDesigner = false;///< Open the unit designer straight away (screenshots).
+    std::string designerUnit; ///< Unit key the designer should open on.
     int mouseX = -1;          ///< Dev aid: park the pointer here at start-up.
     int mouseY = -1;
     int windowW = 1600;       ///< Requested window size (clamped to the display).
@@ -66,6 +68,11 @@ private:
     void drawBattle();
     void drawSummary();
     void drawGameOver();
+    void drawDesigner();
+    /// Draws a unit using its designed hull, colours and mounts.
+    void drawUnitIcon(const Rect& r, Id unitDefId, Faction owner, bool showHardpoints);
+    void openDesigner();
+    void closeDesigner();
 
     // --- galaxy helpers ---
     Rect mapViewport() const;
@@ -91,9 +98,14 @@ private:
     void drawPausedBanner();
     void drawBattlePrompt();
     void drawPlanetTooltip();
-    /// Orbital holding slots and the surface slot, drawn over the selected
-    /// world on the star map.
-    void drawPlanetSlotsOnMap(Id planet);
+    /// Compact fleet and army badges over every world that holds forces: the
+    /// three orbital slots collapse into one stack on the star map, and the
+    /// ten surface cells into one. Both are drag handles.
+    void drawForceBadges();
+    /// Registers a world as somewhere a dragged stack can be sent.
+    void addMoveTarget(const Rect& r, Id planet);
+    /// Starts dragging a whole stack of units.
+    void beginStackDrag(const std::vector<Id>& units, bool fromSurface);
 
     // --- planet (world) view ---
     void enterPlanetView(Id planet);
@@ -168,8 +180,13 @@ private:
         Rect rect;
         int slot = -1;
         bool surface = false;
+        Id planet = kInvalid;  ///< Set for "move your units to this world" targets.
+        bool moveTo = false;
     };
     std::vector<DropTarget> dropTargets_;
+    /// Where this frame's fleet and army badges landed, so the nameplates can
+    /// step around them instead of printing through them.
+    std::vector<Rect> badgeBoxes_;
     std::string status_;
     float statusTimer_ = 0.0f;
     bool showHelp_ = false;
@@ -188,6 +205,18 @@ private:
     // Summary.
     BattleReport lastReport_;
     bool haveReport_ = false;
+
+    // Unit designer.
+    Id designUnit_ = kInvalid;
+    int designFilter_ = 0;
+    int designHardpoint_ = -1;
+    int designFocus_ = -1;       ///< Which editable field has the keyboard.
+    int designWingPick_ = 0;
+    float designScroll_ = 0.0f;
+    float designPropScroll_ = 0.0f;
+    std::string designEdit_;     ///< Text buffer for the focused number field.
+    std::string designMessage_;
+    Screen designReturn_ = Screen::Menu;
 };
 
 }  // namespace ui

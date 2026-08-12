@@ -330,6 +330,11 @@ void App::updateGalaxy(float dt) {
     if (input_.keyPressed(SDLK_2)) game_.setSpeed(GameSpeed::Fast);
     if (input_.keyPressed(SDLK_3)) game_.setSpeed(GameSpeed::Fastest);
     if (input_.keyPressed(SDLK_F1)) showHelp_ = !showHelp_;
+    if (input_.keyPressed(SDLK_F2)) {
+        designReturn_ = Screen::Galaxy;
+        openDesigner();
+        return;
+    }
     if (input_.keyPressed(SDLK_TAB)) {
         if (planetViewT_ > 0.0f) {
             leavePlanetView();
@@ -588,6 +593,7 @@ void App::drawGalaxy() {
                   return a.first > b.first;
               });
     std::vector<Rect> nameplates;
+    badgeBoxes_.clear();
 
     for (int i = 0; i < game_.planetCount(); ++i) {
         const PlanetState& p = game_.planet(i);
@@ -615,19 +621,8 @@ void App::drawGalaxy() {
             gfx_.circleOutline(s.x, s.y, r, c);
         }
 
-        // Garrison pips: a row of dots per faction present.
-        float pipY = s.y + r + S(3.0f);
-        for (int fi = 1; fi < kFactionCount; ++fi) {
-            Faction f = factionFromIndex(fi);
-            int units = static_cast<int>(game_.allUnitsAt(i, f).size());
-            if (units == 0) continue;
-            int pips = std::min(6, (units + 1) / 2);
-            for (int k = 0; k < pips; ++k) {
-                gfx_.rect(Rect{s.x - r + static_cast<float>(k) * S(6.0f), pipY, S(4.0f), S(4.0f)},
-                          pal::faction(f));
-            }
-            pipY += S(6.0f);
-        }
+        // Who is present is told by the fleet and army badges, so the world
+        // itself stays clean.
         if (game_.isContested(i)) {
             gfx_.circleOutline(s.x, s.y, r + S(13.0f), pal::kDanger);
             gfx_.text(s.x + r + S(8.0f), s.y - r - S(14.0f), "!", pal::kDanger, F(2));
@@ -636,6 +631,12 @@ void App::drawGalaxy() {
             gfx_.rect(Rect{s.x + r + S(4.0f), s.y - r - S(2.0f), S(4.0f), S(4.0f)}, pal::kWarning);
         }
     }
+
+    // Fleet and army badges: on the star map the three orbital slots read as
+    // one stack, and the ten surface cells as one. They go down before the
+    // nameplates so the names can dodge them.
+    if (planetViewT_ <= 0.0f) drawForceBadges();
+    nameplates = badgeBoxes_;
 
     for (const auto& entry : byPriority) {
         int i = entry.second;
@@ -673,9 +674,6 @@ void App::drawGalaxy() {
         }
     }
 
-    // Orbital holding slots and the surface slot over the selected world.
-    if (planetViewT_ <= 0.0f && selectedPlanet_ != kInvalid) drawPlanetSlotsOnMap(selectedPlanet_);
-
     gfx_.popClip();
 
     // The world view takes over the map area, so the overlays that live there
@@ -706,7 +704,8 @@ void App::drawGalaxy() {
             "SPACE                  pause / resume     1 2 3  speed",
             "Q E R F                fleet / army / research / world panels",
             "TAB                    world view       F11  full screen",
-            "F1                     this help       ESC  back / clear selection",
+            "F1                     this help       F2  unit designer",
+            "ESC                    back / clear selection",
             "",
             "RULES OF CONQUEST",
             "- Destroy every enemy ship and orbital gun before landing.",
@@ -736,89 +735,6 @@ void App::drawGalaxy() {
         }
     }
     drawQueuedTooltip();
-}
-
-// ---------------------------------------------------------------------------
-// Slot overlay on the star map
-// ---------------------------------------------------------------------------
-void App::drawPlanetSlotsOnMap(Id planet) {
-    const PlanetState& p = game_.planet(planet);
-    const PlanetDef& pd = p.def();
-    Faction me = game_.playerFaction();
-    Faction owner = !game_.allUnitsAt(planet, me).empty() ? me : p.owner;
-    Vec2 centre = worldToScreen(pd.pos);
-    float pr = std::max(S(5.0f), S(pd.spaceOnly ? 6.0f : 9.0f) * viewZoom_ * 0.8f) *
-               perspectiveAt(pd.pos.y);
-
-    const float boxW = S(104);
-    const float boxH = S(58);
-    const float gap = S(6);
-    float totalW = boxW * 3.0f + gap * 2.0f;
-    float top = centre.y - pr - S(30) - boxH;
-    float left = centre.x - totalW * 0.5f;
-
-    Color c = pal::faction(owner);
-    for (int slot = 0; slot < kOrbitSlots; ++slot) {
-        Rect box{left + static_cast<float>(slot) * (boxW + gap), top, boxW, boxH};
-        std::vector<Id> units = game_.unitsInSlot(planet, owner, slot);
-        bool hot = drag_.active &&
-                   box.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY));
-        gfx_.rect(box, hot ? Color(26, 48, 60, 235) : Color(10, 16, 24, 215));
-        gfx_.rectOutline(box, hot ? pal::kAccent : c.withAlpha(190));
-        gfx_.text(box.x + S(4), box.y + S(3), std::to_string(slot + 1), c.scaled(0.9f), F(1));
-        gfx_.textRight(box.right() - S(4), box.y + S(3), std::to_string(units.size()), pal::kTextDim, F(1));
-        if (owner == me) addDropTarget(box, slot, false);
-
-        const float cw = S(22);
-        const float ch = S(20);
-        int perRow = std::max(1, static_cast<int>((box.w - S(6)) / (cw + S(2))));
-        for (size_t i = 0; i < units.size(); ++i) {
-            int row = static_cast<int>(i) / perRow;
-            int col = static_cast<int>(i) % perRow;
-            Rect cell{box.x + S(3) + static_cast<float>(col) * (cw + S(2)),
-                      box.y + S(14) + static_cast<float>(row) * (ch + S(2)), cw, ch};
-            if (cell.bottom() > box.bottom() - S(2)) {
-                gfx_.textRight(box.right() - S(4), box.bottom() - S(10),
-                               "+" + std::to_string(units.size() - i), pal::kWarning, F(1));
-                break;
-            }
-            if (drawUnitCell(cell, units[i], slot, false, true)) toggleUnitSelection(units[i]);
-        }
-    }
-
-    // The surface slot sits on the planet itself.
-    if (!pd.spaceOnly) {
-        std::vector<Id> troops = game_.unitsAt(planet, owner, Domain::Ground, true);
-        float gw = std::max(S(120.0f), pr * 2.6f);
-        float gh = S(46);
-        Rect grid{centre.x - gw * 0.5f, centre.y - gh * 0.35f, gw, gh};
-        bool hot = drag_.active &&
-                   grid.contains(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY));
-        gfx_.rect(grid, hot ? Color(28, 58, 40, 220) : Color(10, 20, 16, 190));
-        gfx_.rectOutline(grid, hot ? pal::kAccent : Color(60, 110, 78, 200));
-        gfx_.text(grid.x + S(3), grid.y - lineH(1) - S(2),
-                  "SURFACE " + std::to_string(troops.size()) + "/" +
-                      std::to_string(kGroundSlotCapacity),
-                  Color(126, 226, 132), F(1));
-        addDropTarget(grid, -1, true);
-
-        const int cols = 5;
-        const int rows = 2;
-        float cw = (grid.w - S(4)) / static_cast<float>(cols);
-        float ch = (grid.h - S(4)) / static_cast<float>(rows);
-        for (int i = 0; i < cols * rows; ++i) {
-            Rect cell{grid.x + S(2) + static_cast<float>(i % cols) * cw,
-                      grid.y + S(2) + static_cast<float>(i / cols) * ch, cw - S(2), ch - S(2)};
-            if (i < static_cast<int>(troops.size())) {
-                if (drawUnitCell(cell, troops[static_cast<size_t>(i)], -1, true, true)) {
-                    toggleUnitSelection(troops[static_cast<size_t>(i)]);
-                }
-            } else {
-                gfx_.rect(cell, Color(9, 16, 14, 160));
-                gfx_.rectOutline(cell, Color(42, 58, 48, 180));
-            }
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1193,7 +1109,8 @@ void App::drawTray(const Rect& area) {
             float days;
             if (units) {
                 const UnitDef& u = db().unit(id);
-                drawUnitGlyph(gfx_, icon, u.unitClass, glyphColour);
+                drawUnitIcon(icon, id, can.ok ? me : Faction::Neutral, false);
+                (void)glyphColour;
                 gfx_.text(icon.x + S(3), icon.y + S(3), classTag(u.unitClass), kReadoutDim, F(1));
                 if (u.isHero) gfx_.textRight(icon.right() - S(3), icon.y + S(3), "*", pal::kWarning, F(1));
                 name = u.name;
@@ -1510,6 +1427,137 @@ void App::drawActionCluster(const Rect& area) {
 }
 
 // ---------------------------------------------------------------------------
+// Force badges on the star map
+//
+// Empire at War shows a world's forces as a couple of small icons in orbit,
+// not as a spreadsheet: the fleet is one stack and the army is another. The
+// slots themselves are only unfolded in the world view. Both badges are drag
+// handles - pick one up and drop it on another world to send it there, or on
+// the army badge to land the troops.
+// ---------------------------------------------------------------------------
+void App::drawForceBadges() {
+    Faction me = game_.playerFaction();
+    float mx = static_cast<float>(input_.mouseX);
+    float my = static_cast<float>(input_.mouseY);
+
+    for (int i = 0; i < game_.planetCount(); ++i) {
+        const PlanetState& p = game_.planet(i);
+        const PlanetDef& pd = p.def();
+        Vec2 centre = worldToScreen(pd.pos);
+        Rect vp = mapViewport();
+        if (!vp.contains(centre.x, centre.y)) continue;
+        float pr = std::max(S(5.0f), S(pd.spaceOnly ? 6.0f : 9.0f) * viewZoom_ * 0.8f) *
+                   perspectiveAt(pd.pos.y);
+        if (pd.baseIncome > 250) pr *= 1.3f;
+
+        // Every world is somewhere a dragged stack can be sent.
+        float hit = std::max(S(18.0f), pr + S(10.0f));
+        if (drag_.active) {
+            addMoveTarget(Rect{centre.x - hit, centre.y - hit, hit * 2.0f, hit * 2.0f}, i);
+            bool over = std::fabs(mx - centre.x) < hit && std::fabs(my - centre.y) < hit;
+            if (over) gfx_.circleOutline(centre.x, centre.y, hit, pal::kAccent);
+        }
+
+        const float badgeW = S(46.0f);
+        const float badgeH = S(26.0f);
+        float stackX = centre.x + pr + S(5.0f);
+        float stackY = centre.y - pr - S(4.0f);
+
+        for (int fi = 0; fi < kFactionCount; ++fi) {
+            Faction f = factionFromIndex(fi);
+            std::vector<Id> ships = game_.unitsAt(i, f, Domain::Space);
+            std::vector<Id> orbitingTroops = game_.unitsAt(i, f, Domain::Ground, false, true);
+            ships.insert(ships.end(), orbitingTroops.begin(), orbitingTroops.end());
+            if (ships.empty()) continue;
+
+            Rect badge{stackX, stackY, badgeW, badgeH};
+            stackY -= badgeH + S(3.0f);
+            badgeBoxes_.push_back(badge);
+            Color c = pal::faction(f);
+            bool hot = drag_.active && badge.contains(mx, my);
+            bool hover = badge.contains(mx, my);
+            gfx_.rect(badge, hot ? Color(28, 50, 62, 240) : Color(10, 16, 24, 226));
+            gfx_.rectOutline(badge, hot || hover ? pal::kAccent : c);
+
+            // The heaviest ship in the stack stands for the whole fleet.
+            Id flagship = ships.front();
+            for (Id id : ships) {
+                if (static_cast<int>(game_.unit(id).def().unitClass) <
+                    static_cast<int>(game_.unit(flagship).def().unitClass)) {
+                    flagship = id;
+                }
+            }
+            drawUnitIcon(Rect{badge.x + S(2), badge.y + S(2), badgeH - S(4), badgeH - S(4)},
+                         game_.unit(flagship).defId, f, false);
+            gfx_.textRight(badge.right() - S(4), badge.y + (badge.h - lineH(2)) * 0.5f,
+                           "x" + std::to_string(ships.size()), c, F(2));
+
+            if (f == me) {
+                addDropTarget(badge, 0, false);
+                if (hover && input_.mouseDown && !drag_.armed && !drag_.active) {
+                    beginStackDrag(ships, false);
+                }
+                if (hover && input_.mouseClicked && !drag_.active) {
+                    selectPlanet(i);
+                    selectedUnits_ = ships;
+                }
+            }
+            if (hover && !drag_.active) {
+                std::vector<std::string> lines;
+                lines.push_back(std::to_string(ships.size()) + " units in orbit");
+                if (f == me) lines.push_back("Drag to another world to send them there");
+                queueTooltip(std::string(factionShortName(f)) + " FLEET", lines);
+            }
+        }
+
+        // The army badge sits on the world itself.
+        if (!pd.spaceOnly) {
+            float armyY = centre.y + pr + S(4.0f);
+            for (int fi = 0; fi < kFactionCount; ++fi) {
+                Faction f = factionFromIndex(fi);
+                std::vector<Id> troops = game_.unitsAt(i, f, Domain::Ground, true);
+                if (troops.empty()) continue;
+                Rect badge{centre.x - badgeW * 0.5f, armyY, badgeW, badgeH};
+                armyY += badgeH + S(3.0f);
+                badgeBoxes_.push_back(badge);
+                Color c = pal::faction(f);
+                bool hot = drag_.active && badge.contains(mx, my);
+                bool hover = badge.contains(mx, my);
+                gfx_.rect(badge, hot ? Color(30, 58, 40, 240) : Color(10, 20, 16, 226));
+                gfx_.rectOutline(badge, hot || hover ? pal::kAccent : c);
+                drawUnitIcon(Rect{badge.x + S(2), badge.y + S(2), badgeH - S(4), badgeH - S(4)},
+                             game_.unit(troops.front()).defId, f, false);
+                gfx_.textRight(badge.right() - S(4), badge.y + (badge.h - lineH(2)) * 0.5f,
+                               "x" + std::to_string(troops.size()), c, F(2));
+
+                // Anyone can drop troops here: that is an invasion.
+                addDropTarget(badge, -1, true);
+                if (f == me) {
+                    if (hover && input_.mouseDown && !drag_.armed && !drag_.active) {
+                        beginStackDrag(troops, true);
+                    }
+                    if (hover && input_.mouseClicked && !drag_.active) {
+                        selectPlanet(i);
+                        selectedUnits_ = troops;
+                    }
+                }
+                if (hover && !drag_.active) {
+                    queueTooltip(std::string(factionShortName(f)) + " ARMY",
+                                 {std::to_string(troops.size()) + " / " +
+                                      std::to_string(kGroundSlotCapacity) + " divisions on the surface",
+                                  f == me ? "Drag into orbit to load the transports" : ""});
+                }
+            }
+            // Even an empty surface accepts a landing.
+            if (drag_.active && drag_.fromSurface == false) {
+                Rect landing{centre.x - badgeW * 0.5f, centre.y + pr + S(4.0f), badgeW, badgeH};
+                addDropTarget(landing, -1, true);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Minimap
 // ---------------------------------------------------------------------------
 void App::drawMinimap(const Rect& area) {
@@ -1697,7 +1745,8 @@ void App::drawInfoCard(const Rect& anchor, Id defId, bool isUnit) {
     gfx_.rect(icon, Color(6, 10, 12, 220));
     gfx_.rectOutline(icon, kConsoleEdge);
     if (isUnit) {
-        drawUnitGlyph(gfx_, icon, glyphClass, pal::faction(game_.playerFaction()));
+        drawUnitIcon(icon, defId, db().unit(defId).faction, false);
+        (void)glyphClass;
     } else if (bdef != nullptr) {
         drawStructureGlyph(gfx_, icon, *bdef, pal::faction(game_.playerFaction()));
     }

@@ -3,3 +3,5 @@ build/
 *.a
 .cache/
 compile_commands.json
+unitmods.txt
+unitmods_test.txt

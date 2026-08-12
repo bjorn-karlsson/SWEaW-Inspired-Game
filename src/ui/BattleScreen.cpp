@@ -72,7 +72,7 @@ void App::updateBattle(float dt) {
     if (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]) battleCamera_.y += pan;
     if (input_.wheel != 0) {
         battleZoom_ *= (input_.wheel > 0) ? 1.12f : 1.0f / 1.12f;
-        battleZoom_ = std::max(0.3f, std::min(2.5f, battleZoom_));
+        battleZoom_ = std::max(0.3f, std::min(3.5f, battleZoom_));
     }
 
     Rect field{0, S(kBattleBarH), static_cast<float>(gfx_.width()),
@@ -201,7 +201,10 @@ void App::drawBattle() {
     for (const tactical::TUnit& u : battle_.units()) {
         if (!u.alive || u.escaped) continue;
         Vec2 p = battleToScreen(u.pos);
-        float r = std::max(S(3.0f), u.radius * battleZoom_);
+        // Never let a ship shrink to a speck: below this the silhouette, the
+        // health bar and the shield ring stop reading at all.
+        float floorR = u.squadron ? S(5.0f) : S(9.0f);
+        float r = std::max(floorR, u.radius * battleZoom_);
         Color c = pal::faction(u.owner);
         bool selected = std::find(battleSelection_.begin(), battleSelection_.end(), u.index) !=
                         battleSelection_.end();
@@ -212,12 +215,8 @@ void App::drawBattle() {
         } else if (u.squadron) {
             gfx_.rect(Rect{p.x - r * 0.6f, p.y - r * 0.6f, r * 1.2f, r * 1.2f}, c);
         } else {
-            // Warships and vehicles point at the enemy side.
-            float dir = u.attackerSide ? 1.0f : -1.0f;
-            gfx_.triangle(Vec2(p.x + dir * r * 1.5f, p.y), Vec2(p.x - dir * r * 0.8f, p.y - r * 0.8f),
-                          Vec2(p.x - dir * r * 0.8f, p.y + r * 0.8f), c.scaled(0.75f));
-            gfx_.triangle(Vec2(p.x + dir * r * 1.1f, p.y), Vec2(p.x - dir * r * 0.4f, p.y - r * 0.45f),
-                          Vec2(p.x - dir * r * 0.4f, p.y + r * 0.45f), c);
+            // Warships and vehicles are drawn as designed, facing the enemy.
+            drawUnitIcon(Rect{p.x - r * 1.6f, p.y - r * 1.1f, r * 3.2f, r * 2.2f}, u.defId, u.owner, true);
         }
 
         if (u.maxShield > 0.0f && u.shield > 0.0f) {

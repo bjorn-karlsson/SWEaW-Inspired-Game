@@ -25,6 +25,7 @@ add_library(gc_core STATIC
   src/data/BuildingDefs.cpp
   src/data/TechDefs.cpp
   src/data/GalaxyDefs.cpp
+  src/data/UnitMods.cpp
   src/sim/GameState.cpp
   src/sim/Autoresolve.cpp
   src/sim/AI.cpp
@@ -52,6 +53,7 @@ if(SDL2_FOUND)
     src/ui/MenuScreen.cpp
     src/ui/GalaxyScreen.cpp
     src/ui/PlanetView.cpp
+    src/ui/DesignScreen.cpp
     src/ui/BattleScreen.cpp
     src/app/main.cpp
   )

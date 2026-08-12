@@ -30,6 +30,14 @@ int App::run(const AppOptions& options) {
         planetViewDir_ = 0;
         updatePlanetTransition(0.0f);
     }
+    if (options.demoDesigner) {
+        designReturn_ = Screen::Menu;
+        if (!options.designerUnit.empty()) {
+            Id id = db().unitId(options.designerUnit);
+            if (id != kInvalid) designUnit_ = id;
+        }
+        openDesigner();
+    }
     if (options.demoBattle || options.demoSummary) startDemoBattle();
     if (options.demoSummary) {
         int guard = 0;
@@ -100,6 +108,11 @@ void App::grantDemoHeroes() {
     // Run the queue out so the heroes actually exist.
     for (int i = 0; i < 4000 && !game_.planet(home).queue.empty(); ++i) game_.update(0.5f);
     game_.setSpeed(GameSpeed::Paused);
+    // Running the queue out can drag the player into a border skirmish, and
+    // its prompt would cover the screen we are trying to photograph.
+    int guard = 0;
+    while (game_.hasPendingPlayerBattle() && guard++ < 32) game_.autoResolvePendingBattle();
+    haveReport_ = false;
     selectedPlanet_ = home;
 }
 
@@ -187,7 +200,11 @@ void App::handleEvents() {
             case SDL_MOUSEWHEEL:
                 input_.wheel += e.wheel.y;
                 break;
+            case SDL_TEXTINPUT:
+                input_.typed += e.text.text;
+                break;
             case SDL_KEYDOWN:
+                if (e.key.keysym.sym == SDLK_BACKSPACE) input_.backspace = true;
                 if (e.key.repeat == 0) {
                     input_.keysPressed.push_back(e.key.keysym.sym);
                     bool altEnter = e.key.keysym.sym == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT) != 0;
@@ -218,6 +235,7 @@ void App::update(float dt) {
             break;
         case Screen::Summary:
         case Screen::GameOver:
+        case Screen::Designer:
             break;
     }
 }
@@ -230,6 +248,7 @@ void App::draw() {
         case Screen::Battle: drawBattle(); break;
         case Screen::Summary: drawSummary(); break;
         case Screen::GameOver: drawGameOver(); break;
+        case Screen::Designer: drawDesigner(); break;
     }
     gfx_.endFrame();
 }
@@ -258,9 +277,33 @@ void App::fitBattleView() {
     Vec2 field = battle_.fieldSize();
     float viewW = static_cast<float>(gfx_.width());
     float viewH = static_cast<float>(gfx_.height()) - S(152.0f);  // bar + footer
-    battleZoom_ = std::min(viewW / std::max(1.0f, field.x), viewH / std::max(1.0f, field.y)) * 0.98f;
-    battleZoom_ = std::max(0.3f, std::min(2.5f, battleZoom_));
-    battleCamera_ = field * 0.5f;
+
+    // Frame the combatants rather than the whole field: a skirmish between two
+    // squadrons should not be shown from the far side of the system.
+    Vec2 lo(field.x, field.y);
+    Vec2 hi(0.0f, 0.0f);
+    int present = 0;
+    for (const tactical::TUnit& u : battle_.units()) {
+        if (!u.alive || u.escaped) continue;
+        lo.x = std::min(lo.x, u.pos.x - u.radius);
+        lo.y = std::min(lo.y, u.pos.y - u.radius);
+        hi.x = std::max(hi.x, u.pos.x + u.radius);
+        hi.y = std::max(hi.y, u.pos.y + u.radius);
+        ++present;
+    }
+    if (present == 0) {
+        lo = Vec2(0.0f, 0.0f);
+        hi = field;
+    }
+    // Room to manoeuvre around the deployment, so nobody fights off screen.
+    float padX = std::max(field.x * 0.06f, (hi.x - lo.x) * 0.20f);
+    float padY = std::max(field.y * 0.06f, (hi.y - lo.y) * 0.20f);
+    float boxW = std::max(1.0f, (hi.x - lo.x) + padX * 2.0f);
+    float boxH = std::max(1.0f, (hi.y - lo.y) + padY * 2.0f);
+
+    battleZoom_ = std::min(viewW / boxW, viewH / boxH);
+    battleZoom_ = std::max(0.3f, std::min(3.0f, battleZoom_));
+    battleCamera_ = Vec2((lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f);
 }
 
 void App::finishBattle(const BattleResolution& res) {

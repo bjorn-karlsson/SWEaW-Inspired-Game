@@ -193,7 +193,12 @@ void App::drawMenu() {
         screen_ = Screen::Galaxy;
         setStatus("Campaign started. Space bar pauses, F1 shows the controls.");
     }
-    Rect quit{w * 0.5f - S(200), h - S(74), S(400), S(34)};
+    Rect designer{w * 0.5f - S(200), h - S(74), S(196), S(34)};
+    if (button(gfx_, input_, designer, "UNIT DESIGNER")) {
+        designReturn_ = Screen::Menu;
+        openDesigner();
+    }
+    Rect quit{w * 0.5f + S(4), h - S(74), S(196), S(34)};
     if (button(gfx_, input_, quit, "QUIT") || input_.keyPressed(SDLK_ESCAPE)) running_ = false;
 
     gfx_.textCentred(w * 0.5f, h - S(28),

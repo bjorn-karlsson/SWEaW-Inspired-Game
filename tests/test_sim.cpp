@@ -1,10 +1,14 @@
 // Simulation tests. No framework: a tiny CHECK macro keeps the build simple.
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 
+#include <fstream>
+
 #include "battle/Tactical.h"
+#include "data/UnitMods.h"
 #include "sim/AI.h"
 #include "sim/GameState.h"
 
@@ -56,11 +60,82 @@ static void testDatabase() {
     const PlanetDef& kuat = d.planet(d.planetId("kuat"));
     CHECK(kuat.mods().capitalCostMult < 1.0f, "Kuat discounts capital ships");
     CHECK(kuat.mods().capitalTimeMult < 1.0f, "Kuat speeds up capital ships");
+    // Warships come out of the factory with their guns already mounted, and
+    // fitting them must not have changed a single ship's firepower.
+    const UnitDef& venator = d.unit(d.unitId("rep_venator"));
+    CHECK(!venator.hardpoints.empty(), "capital ships have hardpoints");
+    CHECK(std::abs(venator.antiCapital() - 115.0f) < 0.01f, "hardpoints preserve anti-capital damage");
+    CHECK(std::abs(venator.antiFighter() - 55.0f) < 0.01f, "hardpoints preserve anti-squadron damage");
+    CHECK(venator.hangarBays() == static_cast<int>(venator.wings.size()), "one hangar bay per wing");
+    for (const UnitDef& u : d.units()) {
+        if (u.domain() != Domain::Space || u.isSquadron()) continue;
+        CHECK(!u.hardpoints.empty(), ("warship is armed: " + u.key).c_str());
+        for (const Hardpoint& h : u.hardpoints) {
+            CHECK(h.damage >= 0.0f && h.health > 0.0f, "hardpoint is sane");
+        }
+    }
+
     // Space-only worlds have no ground slots at all.
     for (const PlanetDef& p : d.planets()) {
         if (!p.spaceOnly) continue;
         CHECK(p.groundUnitSlots == 0 && p.groundBuildSlots == 0, "space-only world has no ground slots");
     }
+}
+
+static void testUnitModsRoundTrip() {
+    std::printf("unit designer persistence...\n");
+    Database& d = editableDb();
+    Id venator = d.unitId("rep_venator");
+    CHECK(venator != kInvalid, "venator exists");
+    if (venator == kInvalid) return;
+
+    const int originalCost = d.unit(venator).cost;
+    const size_t originalMounts = d.unit(venator).hardpoints.size();
+
+    // Edit the way the designer does, write the file, then read it back into a
+    // unit that has been changed again in the meantime.
+    d.unitMutable(venator).cost = 7777;
+    d.unitMutable(venator).custom = true;
+    Hardpoint extra;
+    extra.name = "Test Battery";
+    extra.type = HardpointType::IonCannon;
+    extra.damage = 12.0f;
+    d.unitMutable(venator).hardpoints.push_back(extra);
+
+    const std::string path = "unitmods_test.txt";
+    int written = unitmods::save(d, path);
+    CHECK(written >= 1, "designer wrote at least one unit");
+
+    d.unitMutable(venator).cost = 1;
+    d.unitMutable(venator).hardpoints.clear();
+    int touched = unitmods::load(d, path);
+    CHECK(touched >= 1, "designer file reloaded");
+    CHECK(d.unit(venator).cost == 7777, "cost survives a save and reload");
+    CHECK(d.unit(venator).hardpoints.size() == originalMounts + 1, "hardpoints survive too");
+    CHECK(!d.unit(venator).hardpoints.empty() &&
+              d.unit(venator).hardpoints.back().type == HardpointType::IonCannon,
+          "hardpoint type survives");
+
+    // A key the database has never seen creates a brand new unit.
+    {
+        std::ofstream f(path, std::ios::app);
+        f << "unit test_frigate\n  name Test Frigate\n  faction 2\n  class 1\n"
+          << "  cost 900 9 4 1 1\n  stats 500 100 20 10 200 40 1\n"
+          << "  hardpoint 0 5 200 100 0.3 0.2 Test Gun\nend\n";
+    }
+    unitmods::load(d, path);
+    Id made = d.unitId("test_frigate");
+    CHECK(made != kInvalid, "an unknown key creates a new unit");
+    if (made != kInvalid) {
+        CHECK(d.unit(made).name == "Test Frigate", "new unit keeps its name");
+        CHECK(d.unit(made).faction == Faction::CIS, "new unit keeps its faction");
+        CHECK(d.unit(made).hardpoints.size() == 1, "new unit keeps its hardpoint");
+    }
+
+    std::remove(path.c_str());
+    d.unitMutable(venator).cost = originalCost;
+    d.unitMutable(venator).hardpoints.pop_back();
+    d.unitMutable(venator).custom = false;
 }
 
 static void testGalaxyConnectivity() {
@@ -116,16 +191,23 @@ static void testEconomyAndProduction() {
     Id venator = db().unitId("rep_venator");
     CHECK(!gs.canQueueUnit(planet, venator, Faction::Republic).ok, "tech gate blocks the Venator");
 
-    // Run a few weeks and confirm the unit appears and income is paid.
-    int unitsBefore = 0;
-    for (const UnitInstance& u : gs.units()) {
-        if (u.alive && u.owner == Faction::Republic) ++unitsBefore;
+    // Run a few weeks and confirm the order is delivered and income is paid.
+    auto clonesAt = [&]() {
+        int n = 0;
+        for (Id id : gs.planet(planet).units) {
+            const UnitInstance& u = gs.unit(id);
+            if (u.alive && u.owner == Faction::Republic && u.defId == clone) ++n;
+        }
+        return n;
+    };
+    int unitsBefore = clonesAt();
+    // ~60 seconds of play. Battles the player is dragged into stop the clock,
+    // so resolve them as they come up.
+    for (int i = 0; i < 60 * 20; ++i) {
+        if (gs.hasPendingPlayerBattle()) gs.autoResolvePendingBattle();
+        gs.update(0.05f);
     }
-    for (int i = 0; i < 60 * 20; ++i) gs.update(0.05f);  // ~60 seconds of play
-    int unitsAfter = 0;
-    for (const UnitInstance& u : gs.units()) {
-        if (u.alive && u.owner == Faction::Republic) ++unitsAfter;
-    }
+    int unitsAfter = clonesAt();
     CHECK(gs.date().day > 0, "days advance");
     CHECK(unitsAfter > unitsBefore, "production delivered units");
     CHECK(gs.faction(Faction::Republic).lastIncome > 0, "weekly income paid");
@@ -358,6 +440,66 @@ static void testSlotsAndLanding() {
           "never more than ten divisions on the surface");
 }
 
+static void testTrespassIsIntercepted() {
+    std::printf("trespassing...\n");
+    GameState gs;
+    GameSetup s;
+    s.campaign = db().campaignId("clone_wars_total");
+    s.playerFaction = Faction::Hutts;  // keep the player out of the way
+    s.seed = 1234;
+    gs.start(s);
+
+    // Look for a defended world with a route running straight through it: a
+    // start system whose shortest path to some other system passes over it.
+    Id through = kInvalid, start = kInvalid, beyond = kInvalid;
+    for (int t = 0; t < gs.planetCount() && through == kInvalid; ++t) {
+        if (gs.unitsAt(t, gs.planet(t).owner, Domain::Space).empty()) continue;
+        if (gs.planet(t).owner == Faction::CIS) continue;  // must be hostile to the fleet
+        const std::vector<Id>& nb = gs.neighbours(t);
+        for (size_t i = 0; i < nb.size() && through == kInvalid; ++i) {
+            if (!gs.orbitClearFor(nb[i], Faction::CIS)) continue;  // safe staging system
+            for (size_t j = 0; j < nb.size(); ++j) {
+                if (i == j) continue;
+                std::vector<Id> path = gs.findPath(nb[i], nb[j]);
+                if (path.size() < 2 || path.front() != t) continue;
+                through = t;
+                start = nb[i];
+                beyond = nb[j];
+                break;
+            }
+        }
+    }
+    CHECK(through != kInvalid, "found a defended world sitting on a route");
+    if (through == kInvalid) return;
+
+    std::vector<Id> fleet;
+    Id corvette = db().unitId("cis_diamond");
+    for (int i = 0; i < 3; ++i) fleet.push_back(gs.spawnUnitForTest(corvette, Faction::CIS, start));
+    CHECK(fleet.size() == 3, "staged a CIS squadron");
+
+    OrderResult move = gs.moveUnits(fleet, beyond);
+    CHECK(move.ok, move.message.c_str());
+
+    // Fly it. The fleet must be pulled out of hyperspace over the defended
+    // world instead of sailing past it to its destination. The battle that
+    // follows may finish inside the same tick, so watch the battle log rather
+    // than the fleet itself.
+    bool intercepted = false;
+    bool arrived = false;
+    for (int i = 0; i < 6000 && !intercepted && !arrived; ++i) {
+        if (gs.hasPendingPlayerBattle()) gs.autoResolvePendingBattle();
+        gs.update(0.2f);
+        for (const BattleReport& r : gs.battleLog()) {
+            if (r.planet == through && (r.attacker == Faction::CIS || r.defender == Faction::CIS)) {
+                intercepted = true;
+            }
+        }
+        if (!gs.unitsAt(beyond, Faction::CIS, Domain::Space).empty()) arrived = true;
+    }
+    CHECK(intercepted, "the fleet was intercepted over the defended world");
+    CHECK(!arrived, "the fleet did not slip past the defended world");
+}
+
 static void testAiPlaysByTheRules() {
     std::printf("ai campaign...\n");
     GameState gs;
@@ -438,9 +580,13 @@ int main() {
     testSlotsAndTraits();
     testAutoresolveAndCapture();
     testSlotsAndLanding();
+    testTrespassIsIntercepted();
     testTacticalBattle();
     testAiPlaysByTheRules();
     testDeterminism();
+    // Last: it adds a unit to the shared database, which would otherwise
+    // change what the AI has to play with in the tests above.
+    testUnitModsRoundTrip();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

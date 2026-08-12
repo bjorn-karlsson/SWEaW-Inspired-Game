@@ -68,6 +68,83 @@ struct U {
     Id add() { return db->addUnit(d); }
 };
 
+/// Spreads `total` damage over `count` mounts laid out along the hull, from
+/// the bow backwards, mirrored either side of the spine. `outboard` is how
+/// close to the hull edge they sit; the edge itself tapers towards the bow, so
+/// the mounts follow the silhouette instead of hanging off it.
+void addMounts(UnitDef& u, HardpointType type, const char* name, int count, float total, float bow,
+               float sternward, float outboard) {
+    if (count <= 0 || total <= 0.0f) return;
+    for (int i = 0; i < count; ++i) {
+        Hardpoint h;
+        h.name = std::string(name) + " " + std::to_string(i + 1);
+        h.type = type;
+        h.damage = total / static_cast<float>(count);
+        h.range = u.range;
+        h.health = std::max(20.0f, u.hull * 0.08f);
+        // Two files of mounts walking aft, port and starboard alternately.
+        float step = static_cast<float>(i / 2);
+        h.offsetX = bow - step * sternward;
+        float edge = outboard * (1.0f - h.offsetX) * 0.5f;
+        h.offsetY = (i % 2 == 0) ? -edge : edge;
+        u.hardpoints.push_back(h);
+    }
+}
+
+/// Warships are built with their guns already mounted, so the designer has
+/// something real to edit. The split is exact: the mounts reproduce the hand
+/// written damage numbers, which are then zeroed, so nothing is rebalanced.
+void fitDefaultHardpoints(Database& d) {
+    for (const UnitDef& def : d.units()) {
+        UnitDef& u = d.unitMutable(def.id);
+        if (!u.hardpoints.empty()) continue;
+        int heavy = 0;
+        int light = 0;
+        switch (u.unitClass) {
+            case UnitClass::Capital: heavy = 6; light = 4; break;
+            case UnitClass::Cruiser: heavy = 4; light = 3; break;
+            case UnitClass::Frigate: heavy = 3; light = 2; break;
+            case UnitClass::Corvette: heavy = 2; light = 2; break;
+            default: continue;  // Squadrons and ground units keep flat stats.
+        }
+
+        // Solve for mount damage so the totals come out unchanged:
+        //   antiCapital = 1.00 * turbolasers
+        //   antiFighter = 0.15 * turbolasers + 1.20 * point defence
+        float turbo = u.damageAntiCapital;
+        float point = (u.damageAntiFighter - turbo * hardpointAntiFighter(HardpointType::Turbolaser)) /
+                      hardpointAntiFighter(HardpointType::PointDefence);
+        if (point < 0.0f) {
+            // More anti-capital punch than the light battery can offset: keep
+            // the light mounts empty and leave the remainder on the hull.
+            point = 0.0f;
+        }
+        float lightAntiFighter = point * hardpointAntiFighter(HardpointType::PointDefence);
+        float lightAntiCapital = point * hardpointAntiCapital(HardpointType::PointDefence);
+
+        addMounts(u, HardpointType::Turbolaser, "Turbolaser Battery", heavy, turbo, 0.5f, 0.3f, 0.55f);
+        addMounts(u, HardpointType::PointDefence, "Point Defence Cluster", light, point, 0.3f, 0.34f,
+                  0.85f);
+        for (size_t i = 0; i < u.wings.size(); ++i) {
+            Hardpoint h;
+            h.name = "Hangar Bay " + std::to_string(i + 1);
+            h.type = HardpointType::Hangar;
+            h.damage = 0.0f;
+            h.range = 0.0f;
+            h.health = std::max(40.0f, u.hull * 0.12f);
+            h.offsetX = -0.25f - 0.2f * static_cast<float>(i);
+            h.offsetY = 0.0f;
+            u.hardpoints.push_back(h);
+        }
+
+        // What the mounts now provide comes off the bare hull.
+        u.damageAntiCapital = std::max(0.0f, u.damageAntiCapital - turbo - lightAntiCapital);
+        u.damageAntiFighter = std::max(0.0f, u.damageAntiFighter -
+                                                 turbo * hardpointAntiFighter(HardpointType::Turbolaser) -
+                                                 lightAntiFighter);
+    }
+}
+
 }  // namespace
 
 void registerUnits(Database& d) {
@@ -465,6 +542,98 @@ void registerUnits(Database& d) {
         {"neu_militia_tank", "Militia Armour", "Local Industry"},
     };
     for (const Flavour& f : kFlavour) d.setUnitFlavour(f.key, f.role, f.maker);
+
+    // =======================================================================
+    // Default hull silhouettes and upkeep. Everything here is a starting
+    // point: the in-game designer can change any of it.
+    // =======================================================================
+    for (const UnitDef& def : d.units()) {
+        UnitDef& u = d.unitMutable(def.id);
+        switch (u.unitClass) {
+            case UnitClass::Capital:
+                u.look.shape = HullShape::Wedge;
+                u.look.length = 1.0f;
+                u.look.beam = 0.5f;
+                u.look.engines = 4;
+                break;
+            case UnitClass::Cruiser:
+                u.look.shape = HullShape::Dagger;
+                u.look.length = 0.86f;
+                u.look.beam = 0.42f;
+                u.look.engines = 3;
+                break;
+            case UnitClass::Frigate:
+                u.look.shape = HullShape::Hammerhead;
+                u.look.length = 0.72f;
+                u.look.beam = 0.46f;
+                u.look.engines = 2;
+                break;
+            case UnitClass::Corvette:
+                u.look.shape = HullShape::Dagger;
+                u.look.length = 0.58f;
+                u.look.beam = 0.34f;
+                u.look.engines = 2;
+                break;
+            case UnitClass::Fighter:
+            case UnitClass::Bomber:
+                u.look.shape = HullShape::Arrow;
+                u.look.length = 0.4f;
+                u.look.beam = 0.7f;
+                u.look.engines = 1;
+                break;
+            case UnitClass::Infantry:
+                u.look.shape = HullShape::Trooper;
+                u.look.length = 0.6f;
+                u.look.beam = 0.8f;
+                u.look.engines = 0;
+                break;
+            case UnitClass::Vehicle:
+                u.look.shape = u.name.find("Walker") != std::string::npos ||
+                                       u.name.find("AT-") != std::string::npos ||
+                                       u.name.find("Droid") != std::string::npos
+                                   ? HullShape::Walker
+                                   : HullShape::Tank;
+                u.look.length = 0.7f;
+                u.look.beam = 0.7f;
+                u.look.engines = 0;
+                break;
+            case UnitClass::Artillery:
+                u.look.shape = HullShape::Walker;
+                u.look.length = 0.8f;
+                u.look.beam = 0.65f;
+                u.look.engines = 0;
+                break;
+            case UnitClass::AirSupport:
+                u.look.shape = HullShape::Arrow;
+                u.look.length = 0.6f;
+                u.look.beam = 0.75f;
+                u.look.engines = 2;
+                break;
+            default:
+                break;
+        }
+        // Running costs: roughly a hundredth of the purchase price a week.
+        u.upkeep = std::max(u.isHero ? 0 : 1, u.cost / 100);
+    }
+
+    // A few hulls that are famously not wedges.
+    struct ShapeOverride {
+        const char* key;
+        HullShape shape;
+    };
+    static const ShapeOverride kShapes[] = {
+        {"cis_lucrehulk", HullShape::Ring},      {"cis_hero_malevolence", HullShape::Dagger},
+        {"cis_providence", HullShape::Dagger},   {"cis_recusant", HullShape::Dagger},
+        {"hutt_action6", HullShape::Block},      {"hutt_dreadnaught", HullShape::Block},
+        {"rep_acclamator", HullShape::Wedge},    {"rep_pelta", HullShape::Block},
+        {"neu_frigate", HullShape::Block},
+    };
+    for (const ShapeOverride& o : kShapes) {
+        Id id = d.unitId(o.key);
+        if (id != kInvalid) d.unitMutable(id).look.shape = o.shape;
+    }
+
+    fitDefaultHardpoints(d);
 }
 
 }  // namespace content

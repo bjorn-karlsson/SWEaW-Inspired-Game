@@ -217,6 +217,9 @@ public:
 
     int planetIncome(Id planet) const;
     int factionIncome(Faction f) const;
+    /// Weekly running cost of everything the faction has in the field.
+    int factionUpkeep(Faction f) const;
+    int factionNetIncome(Faction f) const { return factionIncome(f) - factionUpkeep(f); }
     int planetsOwned(Faction f) const;
 
     /// Travel time in days between two adjacent planets.
@@ -259,6 +262,11 @@ public:
 
     // --- misc ---
     Rng& rng() { return rng_; }
+    /// Places a finished unit at a planet. Used by the tests to set up a
+    /// situation without waiting for a shipyard.
+    Id spawnUnitForTest(Id defId, Faction owner, Id planet) {
+        return spawnUnit(defId, owner, planet, isGroundClass(db().unit(defId).unitClass));
+    }
     void log(const std::string& text, Faction f = Faction::Neutral);
     /// Total strength estimate, used for the odds readout.
     float forceStrengthAt(Id planet, Faction f, Domain domain) const;

@@ -102,7 +102,30 @@ void App::updatePlanetTransition(float dt) {
 // Drag and drop plumbing
 // ---------------------------------------------------------------------------
 void App::addDropTarget(const Rect& r, int slot, bool surface) {
-    dropTargets_.push_back(DropTarget{r, slot, surface});
+    DropTarget t;
+    t.rect = r;
+    t.slot = slot;
+    t.surface = surface;
+    t.planet = planetViewTarget_ != kInvalid ? planetViewTarget_ : selectedPlanet_;
+    dropTargets_.push_back(t);
+}
+
+void App::addMoveTarget(const Rect& r, Id planet) {
+    DropTarget t;
+    t.rect = r;
+    t.planet = planet;
+    t.moveTo = true;
+    dropTargets_.push_back(t);
+}
+
+void App::beginStackDrag(const std::vector<Id>& units, bool fromSurface) {
+    if (units.empty()) return;
+    drag_.armed = true;
+    drag_.active = false;
+    drag_.fromSlot = fromSurface ? -1 : game_.unit(units.front()).slot;
+    drag_.fromSurface = fromSurface;
+    drag_.startPos = Vec2(static_cast<float>(input_.mouseX), static_cast<float>(input_.mouseY));
+    drag_.units = units;
 }
 
 bool App::drawUnitCell(const Rect& r, Id unitId, int fromSlot, bool fromSurface, bool compact) {
@@ -123,7 +146,8 @@ bool App::drawUnitCell(const Rect& r, Id unitId, int fromSlot, bool fromSurface,
 
     Color fc = pal::faction(u.owner);
     Rect icon{r.x + S(2), r.y + S(2), r.w - S(4), r.h * (compact ? 0.62f : 0.56f)};
-    drawUnitGlyphShared(gfx_, icon, d.unitClass, beingDragged ? fc.scaled(0.4f) : fc);
+    drawUnitIcon(icon, u.defId, beingDragged ? Faction::Neutral : u.owner, false);
+    (void)fc;
     gfx_.text(r.x + S(3), r.y + S(2), classTag(d.unitClass), kReadoutDim, F(1));
     if (d.isHero) gfx_.textRight(r.right() - S(3), r.y + S(2), "*", pal::kWarning, F(1));
 
@@ -183,6 +207,23 @@ void App::resolveUnitDrop() {
         return;
     }
 
+    if (hit->moveTo) {
+        // Dropped on another world: that is a move order.
+        if (hit->planet != planet) {
+            OrderResult r = game_.moveUnits(drag_.units, hit->planet);
+            setStatus(r.message);
+            if (r.ok) selectedUnits_.clear();
+        }
+        drag_ = UnitDrag{};
+        return;
+    }
+
+    if (hit->planet != kInvalid && hit->planet != planet) {
+        // Slot drops only make sense on the world the units are already at.
+        drag_ = UnitDrag{};
+        return;
+    }
+
     if (hit->surface) {
         // Onto the surface: land the troops (which may start a ground battle).
         std::vector<Id> troops;
@@ -235,7 +276,7 @@ void App::drawDraggedUnits() {
                S(48), S(40)};
         gfx_.rect(r, Color(30, 46, 60, 220));
         gfx_.rectOutline(r, pal::kAccent);
-        drawUnitGlyphShared(gfx_, r.inset(S(5)), u.def().unitClass, pal::faction(u.owner));
+        drawUnitIcon(r.inset(S(5)), u.defId, u.owner, false);
         ++shown;
     }
     if (drag_.units.size() > 4) {

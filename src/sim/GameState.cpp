@@ -651,6 +651,14 @@ int GameState::factionIncome(Faction f) const {
     return total;
 }
 
+int GameState::factionUpkeep(Faction f) const {
+    int total = 0;
+    for (const UnitInstance& u : units_) {
+        if (u.alive && u.owner == f) total += u.def().upkeep;
+    }
+    return total;
+}
+
 int GameState::planetsOwned(Faction f) const {
     int n = 0;
     for (const PlanetState& p : planets_) {
@@ -1026,9 +1034,9 @@ void GameState::tickHeroRespawns() {
 void GameState::payWeeklyIncome() {
     for (FactionState& fs : factions_) {
         if (fs.id == Faction::Neutral) continue;
-        int income = factionIncome(fs.id);
+        int income = factionIncome(fs.id) - factionUpkeep(fs.id);
         fs.lastIncome = income;
-        fs.credits += income;
+        fs.credits = std::max(0, fs.credits + income);
     }
     if (date_.week() > 0) {
         log("Week " + std::to_string(date_.week() + 1) + " begins. Treasury: " +
@@ -1057,6 +1065,22 @@ void GameState::tickFleets(float days) {
                 f.units.clear();
                 f.alive = false;
                 planets_[static_cast<size_t>(arrivedAt)].lastAggressor = f.owner;
+            } else if (!orbitClearFor(arrivedAt, f.owner)) {
+                // Trespassing. Enemy warships or orbital guns in the system
+                // pull the fleet out of hyperspace and it has to fight.
+                for (Id id : f.units) {
+                    UnitInstance& u = unit(id);
+                    if (!u.alive) continue;
+                    u.fleet = kInvalid;
+                    u.landed = false;
+                    addUnitToPlanet(id, arrivedAt);
+                }
+                f.units.clear();
+                f.alive = false;
+                planets_[static_cast<size_t>(arrivedAt)].lastAggressor = f.owner;
+                log(std::string(factionShortName(f.owner)) + " fleet intercepted over " +
+                        planets_[static_cast<size_t>(arrivedAt)].def().name,
+                    f.owner);
             } else {
                 f.from = arrivedAt;
                 f.to = f.path.front();

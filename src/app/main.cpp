@@ -17,6 +17,7 @@ void printUsage() {
         "  --demo-summary           fight a demo battle to the end, show the report\n"
         "  --demo-hud               grant your heroes and pause (HUD screenshots)\n"
         "  --fullscreen             start full screen (F11 toggles it in game)\n"
+        "  --demo-designer          open the unit designer straight away\n"
         "  --window W H             open at this window size\n"
         "  --mouse X Y              park the pointer there at start-up (dev aid)\n"
         "  --screenshot FILE.bmp    render a few frames, save the image and exit\n"
@@ -43,6 +44,11 @@ int main(int argc, char** argv) {
             options.demoHud = true;
         } else if (arg == "--demo-world") {
             options.demoWorld = true;
+        } else if (arg == "--demo-designer") {
+            options.demoDesigner = true;
+        } else if (arg == "--designer-unit" && i + 1 < argc) {
+            options.demoDesigner = true;
+            options.designerUnit = argv[++i];
         } else if (arg == "--fullscreen") {
             options.fullscreen = true;
         } else if (arg == "--window") {

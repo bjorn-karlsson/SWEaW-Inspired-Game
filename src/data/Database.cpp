@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "data/UnitMods.h"
+
 namespace gc {
 
 // ---------------------------------------------------------------------------
@@ -86,11 +88,110 @@ bool PlanetDef::hasTrait(Trait t) const {
 }
 
 // ---------------------------------------------------------------------------
+// Hardpoints and appearance
+// ---------------------------------------------------------------------------
+const char* hardpointTypeName(HardpointType t) {
+    switch (t) {
+        case HardpointType::Turbolaser: return "Turbolaser";
+        case HardpointType::IonCannon: return "Ion Cannon";
+        case HardpointType::Missile: return "Missile Launcher";
+        case HardpointType::LaserCannon: return "Laser Cannon";
+        case HardpointType::PointDefence: return "Point Defence";
+        case HardpointType::ShieldGenerator: return "Shield Generator";
+        case HardpointType::Engine: return "Engine";
+        case HardpointType::Hangar: return "Hangar Bay";
+        default: return "?";
+    }
+}
+
+float hardpointAntiCapital(HardpointType t) {
+    switch (t) {
+        case HardpointType::Turbolaser: return 1.0f;
+        case HardpointType::IonCannon: return 0.9f;
+        case HardpointType::Missile: return 1.1f;
+        case HardpointType::LaserCannon: return 0.25f;
+        default: return 0.0f;
+    }
+}
+
+float hardpointAntiFighter(HardpointType t) {
+    switch (t) {
+        case HardpointType::LaserCannon: return 0.9f;
+        case HardpointType::PointDefence: return 1.2f;
+        case HardpointType::Turbolaser: return 0.15f;
+        default: return 0.0f;
+    }
+}
+
+const char* hullShapeName(HullShape s) {
+    switch (s) {
+        case HullShape::Wedge: return "Wedge";
+        case HullShape::Dagger: return "Dagger";
+        case HullShape::Hammerhead: return "Hammerhead";
+        case HullShape::Sphere: return "Sphere";
+        case HullShape::Ring: return "Ring";
+        case HullShape::Block: return "Block";
+        case HullShape::Arrow: return "Arrow";
+        case HullShape::Walker: return "Walker";
+        case HullShape::Tank: return "Tank";
+        case HullShape::Trooper: return "Trooper";
+        default: return "?";
+    }
+}
+
+float UnitDef::antiCapital() const {
+    float total = damageAntiCapital;
+    for (const Hardpoint& h : hardpoints) total += h.damage * hardpointAntiCapital(h.type);
+    return total;
+}
+
+float UnitDef::antiFighter() const {
+    float total = damageAntiFighter;
+    for (const Hardpoint& h : hardpoints) total += h.damage * hardpointAntiFighter(h.type);
+    return total;
+}
+
+float UnitDef::totalShield() const {
+    float total = shield;
+    for (const Hardpoint& h : hardpoints) {
+        if (h.type == HardpointType::ShieldGenerator) total += h.health;
+    }
+    return total;
+}
+
+float UnitDef::totalSpeed() const {
+    float total = speed;
+    for (const Hardpoint& h : hardpoints) {
+        if (h.type == HardpointType::Engine) total += h.damage;
+    }
+    return total;
+}
+
+int UnitDef::hangarBays() const {
+    int n = 0;
+    for (const Hardpoint& h : hardpoints) {
+        if (h.type == HardpointType::Hangar) ++n;
+    }
+    return n;
+}
+
+// ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
-const Database& Database::get() {
+Database& mutableInstance() {
     static Database instance;
     return instance;
+}
+
+const Database& Database::get() { return mutableInstance(); }
+
+Database& editableDb() { return mutableInstance(); }
+
+Id Database::createUnit(const std::string& key, const UnitDef& from) {
+    UnitDef d = from;
+    d.key = key;
+    d.custom = true;
+    return addUnit(std::move(d));
 }
 
 Database::Database() { build(); }
@@ -101,6 +202,8 @@ void Database::build() {
     content::registerBuildings(*this);
     content::registerGalaxy(*this);
     content::registerCampaigns(*this);
+    // Anything the player designed is folded in on top of the built-in roster.
+    unitmods::load(*this, unitmods::kDefaultPath);
     resolveReferences();
 }
 

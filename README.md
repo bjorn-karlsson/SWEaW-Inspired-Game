@@ -13,7 +13,7 @@ two are run by an AI that plays by exactly the same rules you do.
 | | |
 | --- | --- |
 | ![Main menu](docs/menu.png) | ![Galactic conquest map](docs/galaxy.png) |
-| ![Unit info card](docs/card.png) | ![World view](docs/world.png) |
+| ![Unit designer](docs/designer.png) | ![World view](docs/world.png) |
 | ![Tactical space battle](docs/battle.png) | ![Battle report](docs/summary.png) |
 
 ## Building
@@ -87,13 +87,21 @@ garrison and a reserve apart from one another. The surface slot is the world
 itself and holds **ten divisions**, which is also the hard ceiling on ground
 production there.
 
-Select a world and its three slots appear above it with the surface slot laid
-over the planet. Units are moved by **dragging them from one slot to another**:
+On the star map none of that machinery is on show. Each world wears at most two
+small badges, the way Empire at War does it: a **fleet badge** beside it — the
+three orbital slots read as one stack, marked with its heaviest ship and the
+number of units — and an **army badge** on the world itself for the troops
+holding the ground. One badge per faction present, so a contested system shows
+both sides at a glance. The expanded slots only appear once you dive into the
+world.
 
-* orbit to orbit — reorganise your fleets
-* **orbit to surface** — land the troops (a defended world starts a ground
-  battle, exactly as the INVADE button does)
-* **surface to orbit** — the division boards its transports again
+Everything moves by **drag and drop**, no selecting first:
+
+* drag a fleet badge onto another world — the stack sets off down the lanes
+* drag it onto the world's army badge — the troops land (a defended world
+  starts a ground battle, exactly as the INVADE button does)
+* inside the world view, drag between the three orbital slots and the ten
+  surface cells to reorganise, land or re-embark
 
 Dragging a selected unit brings the rest of the selection with it.
 
@@ -105,6 +113,41 @@ with its ten surface cells, the orbital and surface structure sockets, and a
 dossier panel listing traits, income, slot usage and production tiers. Units
 can be dragged between all of those slots here too. Scroll out, press TAB or
 ESC, or use the button to pull back up to the star map.
+
+### The unit designer
+
+Press **F2** on the star map, or **UNIT DESIGNER** on the main menu, and the
+whole roster opens up for editing. Nothing about a unit is baked into the
+binary: everything the game knows about it is on this screen.
+
+* **Identity** — name, faction, class, role, manufacturer, description
+* **Production** — price, weekly upkeep, build time, how many unit slots it
+  fills, which facility tier and which technology it needs before it can be
+  ordered
+* **Combat** — hull, shields, shield regeneration, anti-capital and
+  anti-squadron damage, weapon range, speed, accuracy, hero status and bonuses
+* **Appearance** — hull silhouette (wedge, dagger, hammerhead, sphere, ring,
+  block, arrow, walker, tank, trooper), length, beam, engine count, and either
+  the faction colour or three colours of your own. The preview shows the ship
+  as it is drawn in battle and as a map icon at the three sizes the star map
+  uses, so you can see what you are doing
+* **Hardpoints** — the turrets. Add and remove mounts, set each one's type
+  (turbolaser, ion cannon, missile launcher, laser cannon, point defence,
+  shield generator, engine, hangar bay), its damage, range and hit points, and
+  **drag it around the hull** to position it. Weapons feed the unit's damage,
+  shield generators its shields, engines its speed, hangar bays its wings
+* **Carried squadrons** — which fighter and bomber squadrons a carrier
+  launches, and how many of each
+
+Every warship in the game already ships with its guns mounted — a Venator
+carries six turbolaser batteries, four point-defence clusters and three hangar
+bays — so there is something real to take apart on the first visit.
+
+Edits apply to the running game immediately. **SAVE ALL** writes every unit you
+have touched to `unitmods.txt` next to the binary, which is read back at
+start-up, so your changes survive. **RELOAD** re-reads that file and **RESET**
+puts one unit back to its built-in definition. **NEW** and **CLONE** create
+units of your own, which are saved the same way.
 
 ### Scaling and full screen
 
@@ -120,7 +163,9 @@ opens at a size that fits your desktop, can be resized freely, and **F11**
 | --- | --- |
 | Left click a world | select it |
 | Right click a world | send the selected units there |
+| Drag a fleet or army badge | send that stack to another world, or land it |
 | Drag a unit tile | move it between the orbital slots and the surface |
+| F2 | open the unit designer |
 | Middle mouse drag | pull the galaxy around |
 | Mouse wheel | zoom; keep scrolling in on a world to dive into it |
 | WASD / arrows | pan |
@@ -139,8 +184,9 @@ button drags the camera.
 Useful switches: `--autostart`, `--campaign N`, `--faction N`, `--difficulty N`,
 `--fullscreen`, `--window W H`, and, for smoke testing and screenshots,
 `--demo-battle`, `--demo-summary`, `--demo-hud`, `--demo-world`,
-`--mouse X Y` and `--screenshot FILE.bmp` (renders a few frames, saves the
-image and exits). `--help` lists them all.
+`--demo-designer`, `--designer-unit KEY`, `--mouse X Y` and
+`--screenshot FILE.bmp` (renders a few frames, saves the image and exits).
+`--help` lists them all.
 
 ### Console client
 
@@ -192,6 +238,11 @@ and on the first day of every week the treasury is paid. A world that is
 currently contested produces nothing, so a raid on a rich system hurts
 immediately.
 
+Payday is **income minus upkeep**. Every unit costs roughly a hundredth of its
+purchase price a week to keep in service (heroes serve for free), so a fleet
+you cannot afford quietly eats the war chest and a lost shipyard world is felt
+the following week. The status line shows the net figure.
+
 ### Building things
 
 You cannot build a unit until you have built the thing that builds it:
@@ -215,6 +266,10 @@ The rules are the ones you would expect from Empire at War:
 
 1. Move a fleet to the target. If anything hostile is in orbit — ships **or**
    armed orbital structures — a **space battle** starts.
+   The same is true of anything you merely fly *through*: a fleet whose route
+   crosses a hostile system is pulled out of hyperspace there and has to fight.
+   An undefended system — no warships, no orbital guns — lets a fleet pass
+   without a shot, exactly as in Empire at War.
 2. You may not land while the enemy holds the orbit. Clear it first.
 3. Landing troops on a defended world starts a **ground battle** against its
    garrison and ground defences.
@@ -266,9 +321,10 @@ patient they are before attacking.
 ```
 src/core      basic types, deterministic RNG, vector maths
 src/data      the content database: units, structures, techs, planets, campaigns
+              plus unitmods.txt loading and saving for the designer
 src/sim       the campaign: economy, production, movement, capture, autoresolve, AI
 src/battle    the real-time tactical battle simulation
-src/ui        SDL2 client: bitmap font, widgets, menu, galaxy map, battler
+src/ui        SDL2 client: bitmap font, widgets, menu, galaxy map, battler, designer
 src/app       entry points for the graphical and console clients
 tests         simulation tests
 ```

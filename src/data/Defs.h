@@ -50,6 +50,69 @@ struct TraitMods {
 // Units
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Hardpoints: the individual weapon and system mounts on a hull. They are what
+// the designer places on a ship, and they add to what the unit can do.
+// ---------------------------------------------------------------------------
+enum class HardpointType : int {
+    Turbolaser = 0,  ///< Heavy anti-capital battery.
+    IonCannon,       ///< Anti-capital, strips shields.
+    Missile,         ///< Anti-capital launcher.
+    LaserCannon,     ///< Light, tracks fighters.
+    PointDefence,    ///< Pure anti-squadron.
+    ShieldGenerator, ///< Adds to the hull's shield pool.
+    Engine,          ///< Adds to speed.
+    Hangar,          ///< Adds a launched squadron slot.
+    Count
+};
+
+const char* hardpointTypeName(HardpointType t);
+/// Anti-capital and anti-squadron damage a mount of this type contributes.
+float hardpointAntiCapital(HardpointType t);
+float hardpointAntiFighter(HardpointType t);
+
+struct Hardpoint {
+    std::string name = "Turbolaser Battery";
+    HardpointType type = HardpointType::Turbolaser;
+    float damage = 10.0f;
+    float range = 200.0f;
+    float health = 150.0f;
+    /// Position on the hull, -1..1 along its length and across its beam.
+    float offsetX = 0.0f;
+    float offsetY = 0.0f;
+};
+
+// ---------------------------------------------------------------------------
+// Appearance: how a unit is drawn on the map and on the battlefield. Every
+// field here is editable in the in-game designer.
+// ---------------------------------------------------------------------------
+enum class HullShape : int {
+    Wedge = 0,   ///< Star Destroyer style dagger.
+    Dagger,      ///< Long and narrow.
+    Hammerhead,  ///< Broad bow, slim body.
+    Sphere,      ///< Core ship / battle station.
+    Ring,        ///< Lucrehulk style ring.
+    Block,       ///< Boxy freighter or transport.
+    Arrow,       ///< Fighter or bomber.
+    Walker,      ///< Legged ground unit.
+    Tank,        ///< Tracked or repulsor vehicle.
+    Trooper,     ///< Infantry squad.
+    Count
+};
+
+const char* hullShapeName(HullShape s);
+
+struct UnitAppearance {
+    HullShape shape = HullShape::Wedge;
+    float length = 1.0f;   ///< Size multiplier along the hull.
+    float beam = 0.55f;    ///< Width as a fraction of length.
+    int engines = 2;
+    bool useFactionColour = true;
+    int primary[3] = {170, 190, 210};
+    int secondary[3] = {90, 110, 140};
+    int accent[3] = {230, 170, 90};
+};
+
 /// A wing of squadrons carried by a capital ship / carrier and launched during
 /// a space battle (Venator, Acclamator, Providence ...).
 struct CarriedWing {
@@ -81,7 +144,11 @@ struct UnitDef {
     float speed = 45.0f;    ///< Tactical movement speed.
     float accuracy = 1.0f;  ///< Scales damage output in autoresolve.
 
-    std::vector<CarriedWing> wings;  ///< Launched squadrons (carriers only).
+    std::vector<CarriedWing> wings;      ///< Launched squadrons (carriers only).
+    std::vector<Hardpoint> hardpoints;   ///< Weapon and system mounts.
+    UnitAppearance look;                 ///< How it is drawn.
+    int upkeep = 0;                      ///< Credits per week while it lives.
+    bool custom = false;                 ///< Created or edited in the designer.
 
     Id requiredTech = kInvalid;
     int requiredTier = 1;  ///< Production building tier needed to build this.
@@ -99,6 +166,15 @@ struct UnitDef {
 
     Domain domain() const { return domainOf(unitClass); }
     bool isSquadron() const { return isSquadronClass(unitClass); }
+
+    /// Damage including everything mounted on the hull.
+    float antiCapital() const;
+    float antiFighter() const;
+    /// Shields and speed including hardpoint contributions.
+    float totalShield() const;
+    float totalSpeed() const;
+    /// Squadrons launched: carried wings plus hangar mounts.
+    int hangarBays() const;
 };
 
 // ---------------------------------------------------------------------------

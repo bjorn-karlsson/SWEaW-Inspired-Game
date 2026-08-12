@@ -25,8 +25,8 @@ const Color kHyperlane{92, 148, 210};
 
 Color faction(Faction f) {
     switch (f) {
-        case Faction::Republic: return Color(90, 170, 255);
-        case Faction::CIS: return Color(226, 96, 78);
+        case Faction::Republic: return Color(226, 84, 74);
+        case Faction::CIS: return Color(86, 156, 255);
         case Faction::Hutts: return Color(226, 186, 78);
         default: return Color(150, 150, 156);
     }
@@ -41,6 +41,8 @@ bool Input::keyPressed(SDL_Keycode k) const {
 }
 
 void Input::newFrame() {
+    typed.clear();
+    backspace = false;
     wheel = 0;
     mouseClicked = false;
     rightClicked = false;
@@ -313,6 +315,112 @@ void progressBar(Gfx& g, const Rect& r, float fraction, Color fill, Color backgr
     Rect inner{r.x + 1, r.y + 1, (r.w - 2) * fraction, r.h - 2};
     g.rect(inner, fill);
     g.rectOutline(r, pal::kBorder);
+}
+
+bool textField(Gfx& g, const Input& in, const Rect& r, std::string& value, bool focused, int scale) {
+    bool hover = r.contains(static_cast<float>(in.mouseX), static_cast<float>(in.mouseY));
+    g.rect(r, focused ? Color(30, 44, 60) : (hover ? Color(24, 34, 46) : Color(16, 22, 30)));
+    g.rectOutline(r, focused ? pal::kAccent : pal::kBorder);
+
+    bool changed = false;
+    if (focused) {
+        if (!in.typed.empty()) {
+            value += in.typed;
+            changed = true;
+        }
+        if (in.backspace && !value.empty()) {
+            value.pop_back();
+            changed = true;
+        }
+    }
+
+    // While typing, show the tail so the caret stays visible; otherwise show
+    // the beginning, which is what the reader wants to see.
+    int room = std::max(1, static_cast<int>((r.w - 10.0f) / (6.0f * static_cast<float>(scale))));
+    std::string shown = value;
+    if (static_cast<int>(shown.size()) > room) {
+        shown = focused ? shown.substr(shown.size() - static_cast<size_t>(room))
+                        : shown.substr(0, static_cast<size_t>(std::max(1, room - 2))) + "..";
+    }
+    float ty = r.y + (r.h - static_cast<float>(Gfx::textHeight(scale))) * 0.5f;
+    g.text(r.x + 5.0f, ty, shown, pal::kText, scale);
+    if (focused) {
+        float caretX = r.x + 5.0f + static_cast<float>(Gfx::textWidth(shown, scale)) + 1.0f;
+        g.rect(Rect{caretX, ty, static_cast<float>(scale), static_cast<float>(Gfx::textHeight(scale))},
+               pal::kAccent);
+    }
+    return changed;
+}
+
+bool numberField(Gfx& g, const Input& in, const Rect& r, float& value, float step, float lo, float hi,
+                 bool focused, std::string& editing, int scale) {
+    float bw = std::min(r.h, r.w * 0.22f);
+    Rect minus{r.x, r.y, bw, r.h};
+    Rect plus{r.right() - bw, r.y, bw, r.h};
+    Rect box{r.x + bw + 2.0f, r.y, r.w - bw * 2.0f - 4.0f, r.h};
+
+    bool changed = false;
+    ButtonStyle st;
+    st.textScale = scale;
+    if (button(g, in, minus, "-", true, st)) {
+        value = std::max(lo, value - step);
+        changed = true;
+    }
+    if (button(g, in, plus, "+", true, st)) {
+        value = std::min(hi, value + step);
+        changed = true;
+    }
+
+    if (focused) {
+        if (textField(g, in, box, editing, true, scale)) {
+            try {
+                value = std::max(lo, std::min(hi, std::stof(editing)));
+                changed = true;
+            } catch (...) {
+                // Half-typed numbers are fine; keep the old value.
+            }
+        }
+    } else {
+        char buf[32];
+        if (std::fabs(value - std::round(value)) < 0.001f) {
+            std::snprintf(buf, sizeof(buf), "%d", static_cast<int>(std::lround(value)));
+        } else {
+            std::snprintf(buf, sizeof(buf), "%.2f", static_cast<double>(value));
+        }
+        bool hover = box.contains(static_cast<float>(in.mouseX), static_cast<float>(in.mouseY));
+        g.rect(box, hover ? Color(24, 34, 46) : Color(16, 22, 30));
+        g.rectOutline(box, pal::kBorder);
+        g.textCentred(box.x + box.w * 0.5f,
+                      box.y + (box.h - static_cast<float>(Gfx::textHeight(scale))) * 0.5f, buf,
+                      pal::kText, scale);
+    }
+    return changed;
+}
+
+bool enumField(Gfx& g, const Input& in, const Rect& r, int& value, const char* const* names, int count,
+               int scale) {
+    float bw = std::min(r.h, r.w * 0.2f);
+    Rect prev{r.x, r.y, bw, r.h};
+    Rect next{r.right() - bw, r.y, bw, r.h};
+    Rect box{r.x + bw + 2.0f, r.y, r.w - bw * 2.0f - 4.0f, r.h};
+    bool changed = false;
+    ButtonStyle st;
+    st.textScale = scale;
+    if (button(g, in, prev, "<", true, st)) {
+        value = (value + count - 1) % count;
+        changed = true;
+    }
+    if (button(g, in, next, ">", true, st)) {
+        value = (value + 1) % count;
+        changed = true;
+    }
+    g.rect(box, Color(16, 22, 30));
+    g.rectOutline(box, pal::kBorder);
+    int idx = std::max(0, std::min(count - 1, value));
+    g.textCentred(box.x + box.w * 0.5f,
+                  box.y + (box.h - static_cast<float>(Gfx::textHeight(scale))) * 0.5f, names[idx],
+                  pal::kText, scale);
+    return changed;
 }
 
 float wrappedText(Gfx& g, const Rect& r, const std::string& s, Color c, int scale) {
